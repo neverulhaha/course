@@ -82,15 +82,17 @@ function mapInfrastructureError(e: unknown): AppError | null {
   const err = e as { code?: string; message?: string };
   const c = err.code;
   const m = (err.message ?? "").toLowerCase();
-  if (
-    c === "ECONNREFUSED" ||
-    c === "ETIMEDOUT" ||
-    c === "ENOTFOUND" ||
-    c === "EAI_AGAIN"
-  ) {
+  if (c === "ENOTFOUND" || c === "EAI_AGAIN") {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Cannot reach the database",
+      "Database host not found (DNS). Re-copy DATABASE_URL from Supabase → Project Settings → Database → Connection string (URI). Fix typos in the hostname or project ref; pooler host differs from db.<ref>.supabase.co.",
+      503
+    );
+  }
+  if (c === "ECONNREFUSED" || c === "ETIMEDOUT") {
+    return new AppError(
+      "SERVICE_UNAVAILABLE",
+      "Cannot reach the database (connection refused or timeout). Check port (5432 direct vs 6543 pooler) and that the Supabase project is not paused.",
       503
     );
   }
