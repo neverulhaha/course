@@ -1,7 +1,7 @@
-import { Pool } from "pg";
+import pg from "pg";
 import { AppError } from "./errors.js";
 
-let pool: Pool | null = null;
+let pool: pg.Pool | null = null;
 
 /**
  * Trim quotes; unwrap mistaken bracket-wrapped password from UI copy-paste
@@ -30,7 +30,7 @@ function shouldUseSsl(connectionString: string): boolean {
  * Pool for Supabase: always `ssl: { rejectUnauthorized: false }` on remote.
  * Transaction pooler (6543) + multi-statement transactions is unreliable — use single statements / CTE in auth.service.
  */
-export function getPool(): Pool {
+export function getPool(): pg.Pool {
   if (!pool) {
     const raw = process.env.DATABASE_URL;
     if (!raw?.trim()) {
@@ -45,7 +45,7 @@ export function getPool(): Pool {
       ? { rejectUnauthorized: false }
       : undefined;
 
-    pool = new Pool({
+    pool = new pg.Pool({
       connectionString,
       max: 1,
       idleTimeoutMillis: 20_000,
