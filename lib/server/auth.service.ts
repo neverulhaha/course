@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import type { Pool } from "pg";
 import { getPool } from "./db.js";
 import { getConfig } from "./config.js";
 import { AppError } from "./errors.js";
@@ -76,6 +77,128 @@ function mapPgUniqueAndConstraints(err: unknown): AppError | null {
   return null;
 }
 
+/** Node/pg connectivity and auth failures → 503 instead of opaque 500. */
+function mapInfrastructureError(e: unknown): AppError | null {
+  const err = e as { code?: string; message?: string };
+  const c = err.code;
+  const m = (err.message ?? "").toLowerCase();
+  if (
+    c === "ECONNREFUSED" ||
+    c === "ETIMEDOUT" ||
+    c === "ENOTFOUND" ||
+    c === "EAI_AGAIN"
+  ) {
+    return new AppError(
+      "SERVICE_UNAVAILABLE",
+      "Cannot reach the database",
+      503
+    );
+  }
+  if (typeof c === "string" && /^08/.test(c)) {
+    return new AppError(
+      "SERVICE_UNAVAILABLE",
+      "Database connection failed",
+      503
+    );
+  }
+  if (c === "28P01" || m.includes("password authentication failed")) {
+    return new AppError(
+      "SERVICE_UNAVAILABLE",
+      "Database authentication failed — check DATABASE_URL",
+      503
+    );
+  }
+  if (m.includes("certificate") || (m.includes("ssl") && m.includes("fail"))) {
+    return new AppError(
+      "SERVICE_UNAVAILABLE",
+      "Database TLS error — check DATABASE_URL and SSL",
+      503
+    );
+  }
+  return null;
+}
+
+type UserRow = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  email_verified_at: Date | null;
+};
+
+/** Prefer DB DEFAULT on `id` (Supabase); fallback to gen_random_uuid() if `id` is NOT NULL without default. */
+async function insertUserRow(
+  pool: Pool,
+  email: string,
+  passwordHash: string,
+  name: string,
+  role: string
+): Promise<UserRow> {
+  const returning = `RETURNING id, email, name, role, email_verified_at`;
+  const vals = `VALUES ($1, $2, $3, $4, NULL, NULL, NOW(), NOW())`;
+  const cols =
+    "(email, password_hash, name, role, email_verified_at, last_login_at, created_at, updated_at)";
+
+  try {
+    const ins = await pool.query<UserRow>(
+      `INSERT INTO users ${cols} ${vals} ${returning}`,
+      [email, passwordHash, name, role]
+    );
+    return ins.rows[0];
+  } catch (e) {
+    const pg = e as { code?: string; column?: string; message?: string };
+    const idMissing =
+      pg.code === "23502" &&
+      (pg.column === "id" ||
+        /null value in column "id"/i.test(pg.message ?? ""));
+    if (idMissing) {
+      const ins = await pool.query<UserRow>(
+        `INSERT INTO users (id, email, password_hash, name, role, email_verified_at, last_login_at, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, NULL, NULL, NOW(), NOW())
+         ${returning}`,
+        [email, passwordHash, name, role]
+      );
+      return ins.rows[0];
+    }
+    throw e;
+  }
+}
+
+async function insertRefreshTokenRow(
+  pool: Pool,
+  userId: string,
+  refreshHash: string,
+  refreshExpires: Date,
+  userAgent: string | null | undefined,
+  ip: string | null | undefined
+): Promise<void> {
+  const cols =
+    "(user_id, token_hash, expires_at, created_at, revoked_at, user_agent, ip_address)";
+  const vals = "VALUES ($1, $2, $3, NOW(), NULL, $4, $5)";
+
+  try {
+    await pool.query(
+      `INSERT INTO refresh_tokens ${cols} ${vals}`,
+      [userId, refreshHash, refreshExpires, userAgent ?? null, ip ?? null]
+    );
+  } catch (e) {
+    const pg = e as { code?: string; column?: string; message?: string };
+    const idMissing =
+      pg.code === "23502" &&
+      (pg.column === "id" ||
+        /null value in column "id"/i.test(pg.message ?? ""));
+    if (idMissing) {
+      await pool.query(
+        `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at, revoked_at, user_agent, ip_address)
+         VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NULL, $4, $5)`,
+        [userId, refreshHash, refreshExpires, userAgent ?? null, ip ?? null]
+      );
+      return;
+    }
+    throw e;
+  }
+}
+
 function mapUser(row: {
   id: string;
   email: string;
@@ -114,9 +237,10 @@ export async function registerUser(
   /** DB default; override via DEFAULT_USER_ROLE, иначе всегда 'user' для новых аккаунтов */
   const role = (config.defaultUserRole || "user").trim() || "user";
 
-  console.info("[auth:register] start", {
+  console.info("[auth:register] request (sanitized)", {
     email: maskEmail(email),
     nameLength: name.length,
+    passwordLength: password.length,
     role,
   });
 
@@ -138,6 +262,8 @@ export async function registerUser(
   } catch (e) {
     if (e instanceof AppError) throw e;
     logPgError("register email uniqueness check", e);
+    const infra = mapInfrastructureError(e);
+    if (infra) throw infra;
     throw new AppError("INTERNAL_ERROR", "Could not verify email", 500);
   }
 
@@ -148,25 +274,19 @@ export async function registerUser(
     Date.now() + config.refreshTtlDays * 24 * 60 * 60 * 1000
   );
 
-  let userRow: {
-    id: string;
-    email: string;
-    name: string;
-    role: string;
-    email_verified_at: Date | null;
-  };
+  let userRow: UserRow;
 
   try {
-    const ins = await pool.query<typeof userRow>(
-      `INSERT INTO users (id, email, password_hash, name, role, email_verified_at, last_login_at, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, NULL, NULL, NOW(), NOW())
-       RETURNING id, email, name, role, email_verified_at`,
-      [email, passwordHash, name, role]
-    );
-    userRow = ins.rows[0];
-    console.info("[auth:register] users INSERT ok", { id: userRow.id, role: userRow.role });
+    userRow = await insertUserRow(pool, email, passwordHash, name, role);
+    console.info("[auth:register] users INSERT ok", {
+      id: userRow.id,
+      email: maskEmail(userRow.email),
+      role: userRow.role,
+    });
   } catch (e) {
     logPgError("users INSERT", e);
+    const infra = mapInfrastructureError(e);
+    if (infra) throw infra;
     const mapped = mapPgUniqueAndConstraints(e);
     if (mapped) throw mapped;
     throw new AppError(
@@ -177,17 +297,24 @@ export async function registerUser(
   }
 
   try {
-    await pool.query(
-      `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at, revoked_at, user_agent, ip_address)
-       VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NULL, $4, $5)`,
-      [userRow.id, refreshHash, refreshExpires, userAgent ?? null, ip ?? null]
+    await insertRefreshTokenRow(
+      pool,
+      userRow.id,
+      refreshHash,
+      refreshExpires,
+      userAgent,
+      ip
     );
-    console.info("[auth:register] refresh_tokens INSERT ok", { userId: userRow.id });
+    console.info("[auth:register] refresh_tokens INSERT ok", {
+      userId: userRow.id,
+    });
   } catch (e) {
     logPgError("refresh_tokens INSERT (rolling back user)", e);
     await pool.query(`DELETE FROM users WHERE id = $1`, [userRow.id]).catch(() => {
       console.error("[auth:register] rollback DELETE users failed");
     });
+    const infra = mapInfrastructureError(e);
+    if (infra) throw infra;
     const mapped = mapPgUniqueAndConstraints(e);
     if (mapped) throw mapped;
     throw new AppError(
@@ -261,14 +388,19 @@ export async function loginUser(
       `UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [row.id]
     );
-    await pool.query(
-      `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at, revoked_at, user_agent, ip_address)
-       VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NULL, $4, $5)`,
-      [row.id, refreshHash, refreshExpires, userAgent ?? null, ip ?? null]
+    await insertRefreshTokenRow(
+      pool,
+      row.id,
+      refreshHash,
+      refreshExpires,
+      userAgent,
+      ip
     );
     console.info("[auth:login] ok", { userId: row.id });
   } catch (e) {
     logPgError("login session insert", e);
+    const infra = mapInfrastructureError(e);
+    if (infra) throw infra;
     throw new AppError(
       "INTERNAL_ERROR",
       "Could not create session",
@@ -372,6 +504,8 @@ export async function refreshSession(
   } catch (e) {
     if (e instanceof AppError) throw e;
     logPgError("refreshSession", e);
+    const infra = mapInfrastructureError(e);
+    if (infra) throw infra;
     throw new AppError(
       "INTERNAL_ERROR",
       "Could not refresh session",

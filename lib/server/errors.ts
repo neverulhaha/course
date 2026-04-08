@@ -8,7 +8,8 @@ export type ErrorCode =
   | "RATE_LIMITED"
   | "METHOD_NOT_ALLOWED"
   | "NOT_FOUND"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "SERVICE_UNAVAILABLE";
 
 export class AppError extends Error {
   constructor(

@@ -86,6 +86,26 @@ function logRequest(req: VercelRequest, op: string): void {
   console.info("[api/auth]", req.method, op, meta);
 }
 
+/** Safe logging of register payload (no secrets). */
+function logRegisterRequestBody(req: VercelRequest): void {
+  const raw = parseJsonBody(req);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    console.info("[api/auth] register req.body", {
+      shape: raw === undefined ? "empty" : typeof raw,
+    });
+    return;
+  }
+  const b = raw as Record<string, unknown>;
+  const email = typeof b.email === "string" ? b.email : "";
+  const [a, d] = email.split("@");
+  console.info("[api/auth] register req.body (sanitized)", {
+    emailPreview: d ? `${a.slice(0, 2)}***@${d}` : "***",
+    nameLen: typeof b.name === "string" ? b.name.length : 0,
+    passwordLen: typeof b.password === "string" ? b.password.length : 0,
+    keys: Object.keys(b),
+  });
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
@@ -116,6 +136,7 @@ export default async function handler(
           max: 5,
           message: "Too many registration attempts",
         });
+        logRegisterRequestBody(req);
         const body = parseBody(registerBodySchema, parseJsonBody(req));
         const out = await registerUser(
           body.email,

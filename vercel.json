@@ -33,7 +33,7 @@
       "destination": "/api/auth?__op=me"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api(?:/|$)).*)",
       "destination": "/index.html"
     }
   ],

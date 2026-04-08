@@ -1,7 +1,22 @@
+import { AppError } from "./errors.js";
+
 function required(name: string): string {
   const raw = process.env[name];
   const v = raw?.trim();
-  if (!v) throw new Error(`Missing required env: ${name}`);
+  if (!v) {
+    if (name === "DATABASE_URL") {
+      throw new AppError(
+        "SERVICE_UNAVAILABLE",
+        "DATABASE_URL is not configured",
+        503
+      );
+    }
+    throw new AppError(
+      "INTERNAL_ERROR",
+      `Missing required configuration: ${name}`,
+      500
+    );
+  }
   if (
     (v.startsWith('"') && v.endsWith('"')) ||
     (v.startsWith("'") && v.endsWith("'"))

@@ -1,15 +1,22 @@
 import { Pool } from "pg";
+import { AppError } from "./errors.js";
 
 let pool: Pool | null = null;
 
+/**
+ * Trim quotes; unwrap mistaken bracket-wrapped password from UI copy-paste
+ * (`postgresql://user:[pass]@host` → `postgresql://user:pass@host`).
+ * Special characters in the password must still be URL-encoded in the URI.
+ */
 function normalizeDatabaseUrl(raw: string): string {
   let u = raw.trim();
   if (
     (u.startsWith('"') && u.endsWith('"')) ||
     (u.startsWith("'") && u.endsWith("'"))
   ) {
-    u = u.slice(1, -1);
+    u = u.slice(1, -1).trim();
   }
+  u = u.replace(/:\/\/([^/?#]+):\[([^\]]*)\]@/g, "://$1:$2@");
   return u;
 }
 
@@ -26,7 +33,13 @@ function shouldUseSsl(connectionString: string): boolean {
 export function getPool(): Pool {
   if (!pool) {
     const raw = process.env.DATABASE_URL;
-    if (!raw) throw new Error("DATABASE_URL is not set");
+    if (!raw?.trim()) {
+      throw new AppError(
+        "SERVICE_UNAVAILABLE",
+        "DATABASE_URL is not configured",
+        503
+      );
+    }
     const connectionString = normalizeDatabaseUrl(raw);
     const ssl = shouldUseSsl(connectionString)
       ? { rejectUnauthorized: false }
