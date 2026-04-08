@@ -11,5 +11,5 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts", "../lib/server/**/*.ts"]
 }

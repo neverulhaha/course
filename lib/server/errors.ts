@@ -7,6 +7,7 @@ export type ErrorCode =
   | "EMAIL_ALREADY_REGISTERED"
   | "RATE_LIMITED"
   | "METHOD_NOT_ALLOWED"
+  | "NOT_FOUND"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {
