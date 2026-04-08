@@ -31,6 +31,10 @@
     {
       "source": "/api/auth/me",
       "destination": "/api/auth?__op=me"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ],
   "functions": {

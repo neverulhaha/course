@@ -111,7 +111,8 @@ export async function registerUser(
 }> {
   const config = getConfig();
   const pool = getPool();
-  const role = config.defaultUserRole || "user";
+  /** DB default; override via DEFAULT_USER_ROLE, иначе всегда 'user' для новых аккаунтов */
+  const role = (config.defaultUserRole || "user").trim() || "user";
 
   console.info("[auth:register] start", {
     email: maskEmail(email),
