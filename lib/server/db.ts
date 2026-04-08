@@ -1,24 +1,10 @@
 import pg from "pg";
-import { AppError } from "./errors.js";
+import {
+  requirePostgresConnectionString,
+  resolvedPostgresEnvKey,
+} from "./databaseUrl.js";
 
 let pool: pg.Pool | null = null;
-
-/**
- * Trim quotes; unwrap mistaken bracket-wrapped password from UI copy-paste
- * (`postgresql://user:[pass]@host` → `postgresql://user:pass@host`).
- * Special characters in the password must still be URL-encoded in the URI.
- */
-function normalizeDatabaseUrl(raw: string): string {
-  let u = raw.trim();
-  if (
-    (u.startsWith('"') && u.endsWith('"')) ||
-    (u.startsWith("'") && u.endsWith("'"))
-  ) {
-    u = u.slice(1, -1).trim();
-  }
-  u = u.replace(/:\/\/([^/?#]+):\[([^\]]*)\]@/g, "://$1:$2@");
-  return u;
-}
 
 /** True for Supabase / remote hosts; false for local Postgres without SSL. */
 function shouldUseSsl(connectionString: string): boolean {
@@ -32,15 +18,7 @@ function shouldUseSsl(connectionString: string): boolean {
  */
 export function getPool(): pg.Pool {
   if (!pool) {
-    const raw = process.env.DATABASE_URL;
-    if (!raw?.trim()) {
-      throw new AppError(
-        "SERVICE_UNAVAILABLE",
-        "DATABASE_URL is not configured",
-        503
-      );
-    }
-    const connectionString = normalizeDatabaseUrl(raw);
+    const connectionString = requirePostgresConnectionString();
     const ssl = shouldUseSsl(connectionString)
       ? { rejectUnauthorized: false }
       : undefined;
@@ -58,7 +36,12 @@ export function getPool(): pg.Pool {
     });
 
     const masked = connectionString.replace(/:([^:@/]+)@/, ":****@");
-    console.info("[db] pool ready →", masked.replace(/^postgres(ql)?:\/\//, ""));
+    console.info(
+      "[db] pool ready (env:",
+      resolvedPostgresEnvKey() ?? "?",
+      ") →",
+      masked.replace(/^postgres(ql)?:\/\//, "")
+    );
 
     pool
       .query("SELECT 1 AS ok")

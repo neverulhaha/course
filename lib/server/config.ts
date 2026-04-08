@@ -1,22 +1,7 @@
 import { AppError } from "./errors.js";
+import { requirePostgresConnectionString } from "./databaseUrl.js";
 
-function required(name: string): string {
-  const raw = process.env[name];
-  const v = raw?.trim();
-  if (!v) {
-    if (name === "DATABASE_URL") {
-      throw new AppError(
-        "SERVICE_UNAVAILABLE",
-        "DATABASE_URL is not configured",
-        503
-      );
-    }
-    throw new AppError(
-      "INTERNAL_ERROR",
-      `Missing required configuration: ${name}`,
-      500
-    );
-  }
+function stripQuotes(v: string): string {
   if (
     (v.startsWith('"') && v.endsWith('"')) ||
     (v.startsWith("'") && v.endsWith("'"))
@@ -26,14 +11,42 @@ function required(name: string): string {
   return v;
 }
 
+function required(name: string): string {
+  const raw = process.env[name];
+  const v = raw?.trim();
+  if (!v) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      `Missing required configuration: ${name}`,
+      500
+    );
+  }
+  return stripQuotes(v);
+}
+
+/** Custom API JWT; Vercel Supabase integration exposes SUPABASE_JWT_SECRET. */
+function jwtAccessSecretFromEnv(): string {
+  const raw =
+    process.env.JWT_ACCESS_SECRET?.trim() ||
+    process.env.SUPABASE_JWT_SECRET?.trim();
+  if (!raw) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      "Missing JWT_ACCESS_SECRET or SUPABASE_JWT_SECRET",
+      500
+    );
+  }
+  return stripQuotes(raw);
+}
+
 export function getConfig() {
   return {
     nodeEnv: process.env.NODE_ENV ?? "development",
     isDev: process.env.NODE_ENV !== "production",
 
-    databaseUrl: required("DATABASE_URL"),
+    databaseUrl: requirePostgresConnectionString(),
 
-    jwtAccessSecret: required("JWT_ACCESS_SECRET"),
+    jwtAccessSecret: jwtAccessSecretFromEnv(),
     jwtRefreshPepper: process.env.JWT_REFRESH_PEPPER?.trim() ?? "",
 
     accessTtlMinutes: Number(process.env.ACCESS_TOKEN_TTL_MINUTES) || 15,
