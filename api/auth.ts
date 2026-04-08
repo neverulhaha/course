@@ -3,7 +3,7 @@
  * Subpaths are mapped via vercel.json rewrites → ?__op=...
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import * as jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import {
   getUserById,
   loginUser,

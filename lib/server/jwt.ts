@@ -1,4 +1,4 @@
-import * as jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { getConfig } from "./config.js";
 
 export interface AccessPayload {
