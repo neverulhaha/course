@@ -68,6 +68,24 @@ function userAgent(req: VercelRequest): string | undefined {
   return typeof ua === "string" ? ua : undefined;
 }
 
+function logRequest(req: VercelRequest, op: string): void {
+  const raw = parseJsonBody(req);
+  let meta: Record<string, unknown> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const b = raw as Record<string, unknown>;
+    if (typeof b.email === "string") {
+      const [a, d] = b.email.split("@");
+      meta.emailPreview = d ? `${a.slice(0, 2)}***@${d}` : "***";
+    }
+    if (typeof b.name === "string") meta.nameLen = b.name.length;
+    if ("password" in b) meta.hasPassword = true;
+    if ("refreshToken" in b) meta.hasRefreshToken = true;
+    if ("token" in b) meta.hasResetToken = true;
+    if ("newPassword" in b) meta.hasNewPassword = true;
+  }
+  console.info("[api/auth]", req.method, op, meta);
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
@@ -84,8 +102,11 @@ export default async function handler(
   try {
     const op = resolveOp(req);
     if (!op) {
+      console.warn("[api/auth] missing __op; url=", req.url);
       throw new AppError("NOT_FOUND", "Unknown auth route", 404);
     }
+
+    logRequest(req, op);
 
     switch (op) {
       case "register": {
@@ -206,6 +227,9 @@ export default async function handler(
     }
   } catch (e) {
     const { status, body } = toErrorBody(e);
+    if (e instanceof Error && !(e instanceof AppError)) {
+      console.error("[api/auth] unhandled:", e.message);
+    }
     res.status(status).json(body);
   }
 }
