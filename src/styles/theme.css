@@ -1,0 +1,540 @@
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   ВЕРСИУМ — Design Tokens
+   ============================================================ */
+:root {
+  /* Brand — #4A90E2 primary, #1E3A5F dark */
+  --brand-blue: #4A90E2;
+  --brand-blue-dark: #1E3A5F;
+  --brand-lime: #2ECC71;
+
+  /* Neutral palette — mapped to allowed palette */
+  --gray-50:  rgba(0,0,0,0.025);   /* near-white tint */
+  --gray-100: rgba(0,0,0,0.045);
+  --gray-150: rgba(0,0,0,0.065);
+  --gray-200: #C0C0C0;
+  --gray-300: #C0C0C0;
+  --gray-400: #C0C0C0;
+  --gray-500: #666666;
+  --gray-600: #666666;
+  --gray-700: #333333;
+  --gray-800: #333333;
+  --gray-900: #000000;
+
+  /* Semantic surfaces */
+  --bg-page:    rgba(0,0,0,0.025);
+  --bg-surface: #FFFFFF;
+  --bg-subtle:  rgba(0,0,0,0.025);
+  /* Course editor — assistant rail (opaque; gray-50 is rgba and looked “empty”) */
+  --editor-assistant-rail: #F4F5F7;
+
+  /* Glassmorphism */
+  --glass-surface: rgba(255,255,255,0.92);
+
+  /* Borders — subtle system */
+  --border-xs:  rgba(0, 0, 0, 0.04);
+  --border-sm:  rgba(0, 0, 0, 0.07);
+  --border-md:  rgba(0, 0, 0, 0.11);
+  --border-lg:  rgba(0, 0, 0, 0.16);
+
+  /* Typography — Montserrat as primary brand font */
+  --font-sans: 'Montserrat', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Type scale — product-size (tighter than before) */
+  --text-2xs:  0.625rem;   /* 10px — labels */
+  --text-xs:   0.75rem;    /* 12px — captions */
+  --text-sm:   0.8125rem;  /* 13px — secondary */
+  --text-base: 0.9375rem;  /* 15px — body */
+  --text-md:   1.0625rem;  /* 17px — emphasis */
+  --text-lg:   1.1875rem;  /* 19px — subheading */
+  --text-xl:   1.375rem;   /* 22px — heading */
+  --text-2xl:  1.75rem;    /* 28px — page title */
+  --text-3xl:  2.25rem;    /* 36px — hero */
+  --text-4xl:  3rem;       /* 48px — large hero */
+  --text-5xl:  4rem;       /* 64px — display */
+
+  /* Line heights */
+  --leading-none:    0.95;
+  --leading-tight:   1.15;
+  --leading-snug:    1.35;
+  --leading-normal:  1.55;
+  --leading-relaxed: 1.7;
+
+  /* Letter spacing */
+  --tracking-tight:   -0.02em;
+  --tracking-normal:  0em;
+  --tracking-wide:    0.03em;
+  --tracking-wider:   0.08em;
+  --tracking-widest:  0.14em;
+
+  /* Shadows — ultra-subtle */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.09), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-xl: 0 20px 48px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Spacing (4pt grid) */
+  --sp-1: 0.25rem;   /* 4px */
+  --sp-2: 0.5rem;    /* 8px */
+  --sp-3: 0.75rem;   /* 12px */
+  --sp-4: 1rem;      /* 16px */
+  --sp-5: 1.25rem;   /* 20px */
+  --sp-6: 1.5rem;    /* 24px */
+  --sp-8: 2rem;      /* 32px */
+  --sp-10: 2.5rem;   /* 40px */
+  --sp-12: 3rem;     /* 48px */
+  --sp-16: 4rem;     /* 64px */
+
+  /* System variables for Tailwind */
+  --background: var(--bg-page);
+  --foreground: var(--gray-900);
+  --border: var(--border-sm);
+
+  /* Landing — theme-aware (never use --gray-900 as “dark bar”: it inverts in dark mode) */
+  --landing-hero-bg: linear-gradient(180deg, #FFFFFF 0%, rgba(74, 144, 226, 0.06) 100%);
+  --landing-contrast-bg: #1E3A5F;
+  --landing-contrast-badge-text: #C0C0C0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+}
+
+/* ============================================================
+   BASE RESETS
+   ============================================================ */
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--gray-900);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    font-feature-settings: 'cv02', 'cv11';
+  }
+
+  h1 { font-size: var(--text-4xl);  font-weight: 700; line-height: var(--leading-tight);  letter-spacing: var(--tracking-tight); }
+  h2 { font-size: var(--text-2xl);  font-weight: 700; line-height: var(--leading-tight);  letter-spacing: var(--tracking-tight); }
+  h3 { font-size: var(--text-xl);   font-weight: 600; line-height: var(--leading-snug);   }
+  h4 { font-size: var(--text-md);   font-weight: 600; line-height: var(--leading-snug);   }
+  p  { font-size: var(--text-base); font-weight: 400; line-height: var(--leading-relaxed);}
+}
+
+/* ============================================================
+   FOCUS STATES
+   ============================================================ */
+*:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(74, 144, 226, 0.18);
+  color: inherit;
+}
+
+/* ============================================================
+   BUTTON SYSTEM
+   A button = vs-btn + variant (vs-btn-primary / secondary / ghost)
+   Size override: add vs-btn-sm / vs-btn-lg
+   ============================================================ */
+.vs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.14s, box-shadow 0.14s, color 0.14s, transform 0.1s;
+}
+
+.vs-btn-sm  { padding: 5px 10px;  font-size: var(--text-xs);  border-radius: var(--radius-sm); }
+.vs-btn-md  { padding: 8px 16px;  font-size: var(--text-sm);  }
+.vs-btn-lg  { padding: 11px 22px; font-size: var(--text-base); }
+
+.vs-btn-primary {
+  background: var(--brand-blue);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(74,144,226,0.25);
+}
+.vs-btn-primary:hover {
+  background: var(--brand-blue-dark);
+  box-shadow: 0 4px 14px rgba(74,144,226,0.35);
+  transform: translateY(-1px);
+}
+.vs-btn-primary:active { transform: none; box-shadow: 0 1px 3px rgba(74,144,226,0.2); }
+
+.vs-btn-secondary {
+  background: white;
+  color: var(--gray-700);
+  border: 1px solid var(--border-md);
+  box-shadow: var(--shadow-xs);
+}
+.vs-btn-secondary:hover {
+  background: var(--gray-50);
+  border-color: var(--border-lg);
+  color: var(--gray-900);
+}
+
+.vs-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  background: transparent;
+  color: var(--gray-500);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.14s, color 0.14s;
+}
+.vs-btn-ghost:hover {
+  background: var(--gray-100);
+  color: var(--gray-900);
+}
+
+/* ============================================================
+   INPUT SYSTEM
+   ============================================================ */
+.vs-input {
+  display: block;
+  width: 100%;
+  padding: 9px 13px;
+  background: white;
+  color: var(--gray-900);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  font-family: var(--font-sans);
+  line-height: var(--leading-normal);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.vs-input::placeholder { color: var(--gray-400); }
+.vs-input:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(74,144,226,0.1);
+}
+
+.vs-textarea {
+  display: block;
+  width: 100%;
+  padding: 9px 13px;
+  background: white;
+  color: var(--gray-900);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  font-family: var(--font-sans);
+  line-height: var(--leading-normal);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+  resize: vertical;
+  min-height: 96px;
+}
+.vs-textarea::placeholder { color: var(--gray-400); }
+.vs-textarea:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(74,144,226,0.1);
+}
+
+.vs-select {
+  display: block;
+  width: 100%;
+  padding: 9px 32px 9px 13px;
+  background: white;
+  color: var(--gray-900);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  font-family: var(--font-sans);
+  line-height: var(--leading-normal);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23C0C0C0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.vs-select:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(74,144,226,0.1);
+}
+
+/* Form label */
+.vs-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--gray-700);
+  margin-bottom: 6px;
+  letter-spacing: 0.01em;
+}
+
+/* ============================================================
+   CARD SYSTEM
+   ============================================================ */
+.vs-card {
+  background: white;
+  border: 1px solid var(--border-sm);
+  border-radius: var(--radius-xl);
+}
+.vs-card-hover {
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.vs-card-hover:hover {
+  border-color: var(--border-md);
+  box-shadow: var(--shadow-sm);
+}
+.vs-card-shadow {
+  box-shadow: var(--shadow-sm);
+}
+
+/* ============================================================
+   SECTION LABEL  (used as column header / group title)
+   ============================================================ */
+.vs-section-label {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+}
+
+/* ============================================================
+   STATUS BADGES
+   ============================================================ */
+.vs-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1;
+}
+.vs-badge-blue   { background: rgba(74,144,226,0.1);  color: #4A90E2; }
+.vs-badge-green  { background: rgba(46,204,113,0.12); color: #2ECC71; border: 1px solid rgba(46,204,113,0.3); }
+.vs-badge-orange { background: rgba(241,196,15,0.12); color: #F1C40F; }
+.vs-badge-red    { background: rgba(231,76,60,0.1);   color: #E74C3C; }
+.vs-badge-gray   { background: var(--gray-100);        color: var(--gray-600); }
+
+/* ============================================================
+   QA SEVERITY SYSTEM
+   ============================================================ */
+.vs-qa-high   { border-left: 3px solid #E74C3C; background: linear-gradient(90deg, rgba(231,76,60,0.025) 0%, transparent 70%); }
+.vs-qa-medium { border-left: 3px solid #F1C40F; background: linear-gradient(90deg, rgba(241,196,15,0.025) 0%, transparent 70%); }
+.vs-qa-low    { border-left: 3px solid #4A90E2; background: linear-gradient(90deg, rgba(74,144,226,0.025) 0%, transparent 70%); }
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+.vs-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--gray-500);
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+}
+.vs-nav-item:hover { background: var(--gray-100); color: var(--gray-800); }
+.vs-nav-item-active {
+  background: rgba(74,144,226,0.08);
+  color: var(--brand-blue);
+  font-weight: 600;
+}
+
+/* ============================================================
+   PANELS (editor columns, etc.)
+   ============================================================ */
+.vs-panel { background: white; border-right: 1px solid var(--border-sm); }
+.vs-panel-right { background: var(--gray-50); border-left: 1px solid var(--border-sm); }
+
+/* ============================================================
+   ARCHITECTURE UTILITIES
+   ============================================================ */
+.vs-divider  { height: 1px; background: var(--border-sm); }
+.vs-divider-v { width: 1px; background: var(--border-sm); }
+
+.vs-grid-bg {
+  background-image:
+    linear-gradient(rgba(74,144,226,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74,144,226,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ============================================================
+   PROSE (course player content)
+   ============================================================ */
+.vs-prose {
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--gray-700);
+  max-width: 68ch;
+}
+.vs-prose h2 { font-size: var(--text-xl);   color: var(--gray-900); margin: 1.8em 0 0.6em; }
+.vs-prose h3 { font-size: var(--text-md);   color: var(--gray-900); margin: 1.4em 0 0.4em; }
+.vs-prose p  { margin: 0 0 1em; }
+.vs-prose ul { padding-left: 1.25em; margin: 0 0 1em; }
+.vs-prose li { margin-bottom: 0.4em; }
+.vs-prose code {
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.875em;
+  background: var(--gray-100);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #4A90E2;
+}
+.vs-prose pre {
+  background: #000000;
+  color: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  margin: 1.2em 0;
+}
+.vs-prose pre code { background: none; color: inherit; padding: 0; }
+
+/* ============================================================
+   DARK THEME OVERRIDES  — [data-theme="dark"]
+   Layered dark surfaces derived from #000000 (allowed palette).
+   Text scale inverted from gray palette.
+   ============================================================ */
+[data-theme="dark"] {
+  /* Brand — accent stays, dark variant lightens in dark ctx */
+  --brand-blue-dark: #4A90E2;
+
+  /* Neutral scale — fully inverted */
+  --gray-50:  rgba(255,255,255,0.03);
+  --gray-100: rgba(255,255,255,0.05);
+  --gray-150: rgba(255,255,255,0.07);
+  --gray-200: #2A2A2A;
+  --gray-300: #333333;
+  --gray-400: #555555;
+  --gray-500: #888888;
+  --gray-600: #AAAAAA;
+  --gray-700: #C0C0C0;
+  --gray-800: #E0E0E0;
+  --gray-900: #FFFFFF;
+
+  /* Semantic surfaces — layered dark depth */
+  --bg-page:    #0D0D0D;   /* body / outermost container  */
+  --bg-surface: #1A1A1A;   /* cards, sidebar, modals       */
+  --bg-subtle:  #141414;   /* tinted rows, section headers */
+  --editor-assistant-rail: #141414;
+
+  /* Borders — soft light on dark */
+  --border-xs: rgba(255,255,255,0.06);
+  --border-sm: rgba(255,255,255,0.09);
+  --border-md: rgba(255,255,255,0.13);
+  --border-lg: rgba(255,255,255,0.19);
+
+  /* Shadows — deeper in dark mode */
+  --shadow-xs: 0 1px 3px  rgba(0,0,0,0.5);
+  --shadow-sm: 0 2px 6px  rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.6),  0 2px 4px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 28px rgba(0,0,0,0.65), 0 3px 8px rgba(0,0,0,0.5);
+  --shadow-xl: 0 20px 56px rgba(0,0,0,0.7), 0 5px 14px rgba(0,0,0,0.55);
+
+  /* Glassmorphism header */
+  --glass-surface: rgba(26,26,26,0.92);
+
+  /* Landing — dark hero & same contrast strip (navy, not inverted gray-900) */
+  --landing-hero-bg: linear-gradient(180deg, var(--bg-page) 0%, var(--bg-surface) 100%);
+
+  /* Tailwind system vars */
+  --background: var(--bg-page);
+  --foreground: var(--gray-900);
+}
+
+/* ── Dark: button variants ─────────────────────────────────── */
+[data-theme="dark"] .vs-btn-secondary {
+  background: var(--bg-surface);
+  color: var(--gray-700);
+  border-color: var(--border-md);
+}
+[data-theme="dark"] .vs-btn-secondary:hover {
+  background: var(--gray-200);
+  color: var(--gray-900);
+}
+[data-theme="dark"] .vs-btn-ghost:hover {
+  background: var(--gray-150);
+  color: var(--gray-900);
+}
+
+/* ── Dark: inputs ──────────────────────────────────────────── */
+[data-theme="dark"] .vs-input,
+[data-theme="dark"] .vs-textarea,
+[data-theme="dark"] .vs-select {
+  background: var(--bg-subtle);
+  color: var(--gray-900);
+  border-color: var(--border-md);
+}
+[data-theme="dark"] .vs-input::placeholder,
+[data-theme="dark"] .vs-textarea::placeholder { color: var(--gray-400); }
+
+/* ── Dark: nav ─────────────────────────────────────────────── */
+[data-theme="dark"] .vs-nav-item:hover {
+  background: var(--gray-150);
+  color: var(--gray-800);
+}
+[data-theme="dark"] .vs-nav-item-active {
+  background: rgba(74,144,226,0.15);
+}
+
+/* ── Dark: prose ───────────────────────────────────────────── */
+[data-theme="dark"] .vs-prose       { color: var(--gray-700); }
+[data-theme="dark"] .vs-prose h2,
+[data-theme="dark"] .vs-prose h3    { color: var(--gray-900); }
+[data-theme="dark"] .vs-prose code  { background: var(--gray-200); color: #4A90E2; }
+
+/* ── Dark: utility classes ─────────────────────────────────── */
+[data-theme="dark"] .bg-white { background-color: var(--bg-surface) !important; }
+[data-theme="dark"] .border-white { border-color: var(--border-sm) !important; }
