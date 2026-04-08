@@ -2,6 +2,7 @@ import pg from "pg";
 import {
   requirePostgresConnectionString,
   resolvedPostgresEnvKey,
+  stripSslQueryParamsFromPostgresUrl,
 } from "./databaseUrl.js";
 
 let pool: pg.Pool | null = null;
@@ -18,7 +19,9 @@ function shouldUseSsl(connectionString: string): boolean {
  */
 export function getPool(): pg.Pool {
   if (!pool) {
-    const connectionString = requirePostgresConnectionString();
+    const connectionString = stripSslQueryParamsFromPostgresUrl(
+      requirePostgresConnectionString()
+    );
     const ssl = shouldUseSsl(connectionString)
       ? { rejectUnauthorized: false }
       : undefined;

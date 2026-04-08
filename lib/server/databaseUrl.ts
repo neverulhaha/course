@@ -43,6 +43,35 @@ export function normalizeDatabaseConnectionString(raw: string): string {
   return u;
 }
 
+/**
+ * Vercel/Prisma URLs often include `sslmode=verify-full` (needs CA bundle).
+ * With node `pg`, TLS is applied via `Pool` options `ssl: { rejectUnauthorized: false }`;
+ * leaving sslmode in the URI can cause handshake / verification errors.
+ */
+export function stripSslQueryParamsFromPostgresUrl(url: string): string {
+  let out = url;
+  for (const param of [
+    "sslmode",
+    "sslrootcert",
+    "sslcert",
+    "sslkey",
+    "sslcrl",
+    "sslcompression",
+  ]) {
+    const re = new RegExp(`[?&]${param}=[^&]*`, "gi");
+    out = out.replace(re, "");
+  }
+  out = out.replace(/\?&+/g, "?").replace(/&&+/g, "&");
+  // If first query char became "&" (ssl* was first param), fix to "?"
+  out = out.replace(/^([^?]+)&([^/]*)$/, (_, base, rest) =>
+    rest ? `${base}?${rest}` : base
+  );
+  if (out.endsWith("?") || out.endsWith("&")) {
+    out = out.slice(0, -1);
+  }
+  return out;
+}
+
 /** Non-empty Postgres URI for `pg` Pool, or throws AppError 503. */
 export function requirePostgresConnectionString(): string {
   const raw = resolveRawPostgresUrlFromEnv();

@@ -113,7 +113,7 @@ function mapInfrastructureError(e: unknown): AppError | null {
   if (m.includes("certificate") || (m.includes("ssl") && m.includes("fail"))) {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Database TLS error — check DATABASE_URL and SSL",
+      "Database TLS error — check POSTGRES_URL / DATABASE_URL; Vercel+Supabase strings with sslmode=verify-full are normalized in the app (retry deploy).",
       503
     );
   }
