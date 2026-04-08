@@ -2,6 +2,9 @@
 import { Link, useNavigate } from "react-router";
 import { Mail, Lock, User, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AuthLayout, AuthCard, InputField, AuthDivider } from "./AuthLayout";
+import { register } from "@/api/auth";
+import { apiErrorMessage } from "@/api/client";
+import { persistSession } from "@/api/session";
 
 function PasswordStrength({ password }: { password: string }) {
   const score =
@@ -60,11 +63,29 @@ function PasswordStrength({ password }: { password: string }) {
 export default function Register() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/app");
+    setError(null);
+    setLoading(true);
+    try {
+      const out = await register({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+      persistSession(out);
+      navigate("/app");
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -102,38 +123,67 @@ export default function Register() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg px-3 py-2"
+              style={{
+                fontSize: "var(--text-sm)",
+                background: "rgba(231, 76, 60, 0.1)",
+                color: "#C0392B",
+              }}
+            >
+              {error}
+            </div>
+          )}
+
           <InputField
+            id="register-name"
+            name="name"
             label="Имя"
             icon={User}
             type="text"
             placeholder="Иван Иванов"
             autoComplete="name"
             required
+            value={name}
+            onChange={(ev) => setName(ev.target.value)}
+            disabled={loading}
           />
 
           <InputField
+            id="register-email"
+            name="email"
             label="Email"
             icon={Mail}
             type="email"
             placeholder="you@example.com"
             autoComplete="email"
             required
+            value={email}
+            onChange={(ev) => setEmail(ev.target.value)}
+            disabled={loading}
           />
 
           {/* Password with strength */}
           <div>
-            <label className="vs-label">Пароль</label>
+            <label className="vs-label" htmlFor="register-password">
+              Пароль
+            </label>
             <div className="relative">
               <Lock
                 className="absolute top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
                 style={{ left: "14px", color: "var(--gray-400)" }}
               />
               <input
+                id="register-password"
+                name="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Минимум 8 символов"
+                placeholder="Минимум 8 символов, заглавная буква и цифра"
                 autoComplete="new-password"
                 required
                 value={password}
+                disabled={loading}
                 onChange={(e) => setPassword(e.target.value)}
                 className="vs-input w-full min-h-[48px] sm:min-h-[44px] touch-manipulation"
                 style={{
@@ -185,10 +235,11 @@ export default function Register() {
           {/* Submit */}
           <button
             type="submit"
+            disabled={loading}
             className="vs-btn vs-btn-primary w-full touch-manipulation min-h-12 sm:min-h-[44px]"
             style={{ fontSize: "var(--text-sm)", justifyContent: "center", marginTop: "4px" }}
           >
-            Создать аккаунт
+            {loading ? "Создание…" : "Создать аккаунт"}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

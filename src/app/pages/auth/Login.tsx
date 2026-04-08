@@ -2,14 +2,31 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AuthLayout, AuthCard, InputField, AuthDivider } from "./AuthLayout";
+import { login } from "@/api/auth";
+import { apiErrorMessage } from "@/api/client";
+import { persistSession } from "@/api/session";
 
 export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/app");
+    setError(null);
+    setLoading(true);
+    try {
+      const out = await login({ email: email.trim(), password });
+      persistSession(out);
+      navigate("/app");
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -50,22 +67,46 @@ export default function Login() {
           onSubmit={handleSubmit}
           className="flex flex-col gap-4 sm:gap-4"
         >
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg px-3 py-2"
+              style={{
+                fontSize: "var(--text-sm)",
+                background: "rgba(231, 76, 60, 0.1)",
+                color: "#C0392B",
+              }}
+            >
+              {error}
+            </div>
+          )}
+
           <InputField
+            id="login-email"
+            name="email"
             label="Email"
             icon={Mail}
             type="email"
             placeholder="you@example.com"
             autoComplete="email"
             required
+            value={email}
+            onChange={(ev) => setEmail(ev.target.value)}
+            disabled={loading}
           />
 
           <InputField
+            id="login-password"
+            name="password"
             label="Пароль"
             icon={Lock}
             type={showPassword ? "text" : "password"}
             placeholder="••••••••"
             autoComplete="current-password"
             required
+            value={password}
+            onChange={(ev) => setPassword(ev.target.value)}
+            disabled={loading}
             rightSlot={
               <button
                 type="button"
@@ -106,10 +147,11 @@ export default function Login() {
           {/* Submit */}
           <button
             type="submit"
+            disabled={loading}
             className="vs-btn vs-btn-primary w-full touch-manipulation min-h-12 sm:min-h-[44px]"
             style={{ fontSize: "var(--text-sm)", justifyContent: "center", marginTop: "4px" }}
           >
-            Войти в аккаунт
+            {loading ? "Вход…" : "Войти в аккаунт"}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

@@ -44,6 +44,11 @@ interface InputFieldProps {
   required?: boolean;
   autoComplete?: string;
   rightSlot?: React.ReactNode;
+  id?: string;
+  name?: string;
+  value?: string;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
+  disabled?: boolean;
 }
 
 export function InputField({
@@ -54,20 +59,32 @@ export function InputField({
   required,
   autoComplete,
   rightSlot,
+  id,
+  name,
+  value,
+  onChange,
+  disabled,
 }: InputFieldProps) {
   return (
     <div>
-      <label className="vs-label">{label}</label>
+      <label className="vs-label" htmlFor={id}>
+        {label}
+      </label>
       <div className="relative">
         <Icon
           className="absolute top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
           style={{ left: "14px", color: "var(--gray-400)" }}
         />
         <input
+          id={id}
+          name={name}
           type={type}
           placeholder={placeholder}
           required={required}
           autoComplete={autoComplete}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
           className="vs-input w-full min-h-[48px] sm:min-h-[44px] touch-manipulation"
           style={{
             paddingLeft: "40px",

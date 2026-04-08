@@ -120,6 +120,27 @@ export async function registerUser(
     role,
   });
 
+  try {
+    const dup = await pool.query(
+      `SELECT 1 FROM users WHERE lower(trim(email)) = lower(trim($1::text)) LIMIT 1`,
+      [email]
+    );
+    if (dup.rowCount && dup.rowCount > 0) {
+      console.info("[auth:register] email already exists", {
+        email: maskEmail(email),
+      });
+      throw new AppError(
+        "EMAIL_ALREADY_REGISTERED",
+        "An account with this email already exists",
+        409
+      );
+    }
+  } catch (e) {
+    if (e instanceof AppError) throw e;
+    logPgError("register email uniqueness check", e);
+    throw new AppError("INTERNAL_ERROR", "Could not verify email", 500);
+  }
+
   const passwordHash = await hashPassword(password);
   const plainRefresh = generateOpaqueToken();
   const refreshHash = hashOpaqueToken(plainRefresh + config.jwtRefreshPepper);
@@ -211,15 +232,16 @@ export async function loginUser(
     email_verified_at: Date | null;
     password_hash: string;
   }>(
-    `SELECT id, email, name, role, email_verified_at, password_hash FROM users WHERE email = $1`,
+    `SELECT id, email, name, role, email_verified_at, password_hash FROM users WHERE lower(trim(email)) = lower(trim($1::text))`,
     [email]
   );
 
   const row = res.rows[0];
-  const hash = row?.password_hash ?? DUMMY_HASH;
+  const storedHash = row?.password_hash?.trim();
+  const hash = storedHash && storedHash.length > 0 ? storedHash : DUMMY_HASH;
   const ok = await verifyPassword(password, hash);
 
-  if (!row || !ok) {
+  if (!row || !storedHash || !ok) {
     console.info("[auth:login] failed", { email: maskEmail(email), found: !!row });
     throw new AppError(
       "INVALID_CREDENTIALS",

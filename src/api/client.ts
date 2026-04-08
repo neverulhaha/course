@@ -54,3 +54,17 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   return parsed as T;
 }
+
+/** Human-readable message from `{ error: { message } }` or fallback. */
+export function apiErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    const b = e.body;
+    if (b && typeof b === "object" && b !== null && "error" in b) {
+      const err = (b as { error?: { message?: string } }).error;
+      if (typeof err?.message === "string") return err.message;
+    }
+    return e.message;
+  }
+  if (e instanceof Error) return e.message;
+  return "Что-то пошло не так";
+}
