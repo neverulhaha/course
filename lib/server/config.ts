@@ -24,19 +24,27 @@ function required(name: string): string {
   return stripQuotes(v);
 }
 
-/** Custom API JWT; Vercel Supabase integration exposes SUPABASE_JWT_SECRET. */
+/** Секрет подписи access JWT для кастомного API (как в интеграции Supabase на Vercel). */
 function jwtAccessSecretFromEnv(): string {
-  const raw =
-    process.env.JWT_ACCESS_SECRET?.trim() ||
-    process.env.SUPABASE_JWT_SECRET?.trim();
+  const raw = process.env.SUPABASE_JWT_SECRET?.trim();
   if (!raw) {
     throw new AppError(
       "INTERNAL_ERROR",
-      "Задайте JWT_ACCESS_SECRET или SUPABASE_JWT_SECRET",
+      "Задайте SUPABASE_JWT_SECRET",
       500
     );
   }
   return stripQuotes(raw);
+}
+
+function accessTtlMinutesFromEnv(): number {
+  const hours = Number(process.env.ACCESS_TOKEN_TTL_HOURS);
+  if (Number.isFinite(hours) && hours > 0) {
+    return Math.min(Math.round(hours * 60), 24 * 60 * 365);
+  }
+  const mins = Number(process.env.ACCESS_TOKEN_TTL_MINUTES);
+  if (Number.isFinite(mins) && mins > 0) return mins;
+  return 15;
 }
 
 export function getConfig() {
@@ -47,25 +55,25 @@ export function getConfig() {
     databaseUrl: requirePostgresConnectionString(),
 
     jwtAccessSecret: jwtAccessSecretFromEnv(),
-    jwtRefreshPepper: process.env.JWT_REFRESH_PEPPER?.trim() ?? "",
+    jwtRefreshPepper: "",
 
-    accessTtlMinutes: Number(process.env.ACCESS_TOKEN_TTL_MINUTES) || 15,
-    refreshTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS) || 30,
-    passwordResetTtlHours: Number(process.env.PASSWORD_RESET_TTL_HOURS) || 1,
+    accessTtlMinutes: accessTtlMinutesFromEnv(),
+    refreshTtlDays: 30,
+    passwordResetTtlHours: 1,
 
-    defaultUserRole: (process.env.DEFAULT_USER_ROLE ?? "user").trim() || "user",
+    defaultUserRole: "user",
     frontendUrl: (process.env.FRONTEND_URL ?? "http://localhost:5173").replace(
       /\/$/,
       ""
     ),
 
     smtp: {
-      host: process.env.SMTP_HOST?.trim(),
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === "true",
-      user: process.env.SMTP_USER?.trim(),
-      pass: process.env.SMTP_PASS?.trim(),
-      from: process.env.SMTP_FROM?.trim() ?? "noreply@example.com",
+      host: undefined,
+      port: 587,
+      secure: false,
+      user: undefined,
+      pass: undefined,
+      from: "noreply@example.com",
     },
   };
 }

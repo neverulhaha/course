@@ -37,9 +37,6 @@ function setCors(req: VercelRequest, res: VercelResponse): void {
   if (origin && allowed && origin.replace(/\/$/, "") === allowed) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
-  } else if (process.env.NODE_ENV !== "production" && origin) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader(
     "Access-Control-Allow-Methods",

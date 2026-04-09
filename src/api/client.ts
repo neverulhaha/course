@@ -23,7 +23,7 @@ export type RequestOptions = Omit<RequestInit, "body"> & {
  * Thin fetch wrapper: JSON in/out, typed errors, single place for auth headers.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, baseUrl = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_BASE, headers, ...rest } = options;
+  const { body, baseUrl = DEFAULT_BASE, headers, ...rest } = options;
 
   const token =
     typeof window !== "undefined" ? await getAccessToken() : null;

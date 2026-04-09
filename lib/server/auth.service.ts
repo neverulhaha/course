@@ -85,7 +85,7 @@ function mapInfrastructureError(e: unknown): AppError | null {
   if (c === "ENOTFOUND" || c === "EAI_AGAIN") {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Сервер базы не найден (DNS). Проверьте строку подключения в Supabase и переменные POSTGRES_URL / DATABASE_URL на Vercel.",
+      "Сервер базы не найден (DNS). Проверьте строку подключения в Supabase и переменные POSTGRES_* на Vercel.",
       503
     );
   }
@@ -236,7 +236,7 @@ export async function registerUser(
 }> {
   const config = getConfig();
   const pool = getPool();
-  /** DB default; override via DEFAULT_USER_ROLE, иначе всегда 'user' для новых аккаунтов */
+  /** Роль новых пользователей в кастомной БД — фиксирована в конфиге (`user`). */
   const role = (config.defaultUserRole || "user").trim() || "user";
 
   console.info("[auth:register] request (sanitized)", {

@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface ImportMetaEnv {
-  readonly VITE_API_BASE_URL?: string;
+  /* Публичные секреты не через VITE_* — см. __SUPABASE_* в vite.config.ts */
 }
 
 /** Подставляются в `vite.config.ts` из NEXT_PUBLIC_* / SUPABASE_* (см. `src/lib/supabase/client.ts`). */

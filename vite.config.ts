@@ -39,16 +39,6 @@ export default defineConfig(({ mode }) => {
       __SUPABASE_URL__: JSON.stringify(supabaseUrl),
       __SUPABASE_ANON_KEY__: JSON.stringify(supabaseAnonKey),
     },
-    server: {
-      proxy: process.env.VITE_API_PROXY_TARGET
-        ? {
-            "/api": {
-              target: process.env.VITE_API_PROXY_TARGET,
-              changeOrigin: true,
-            },
-          }
-        : undefined,
-    },
     plugins: [
       // The React and Tailwind plugins are both required for Make, even if
       // Tailwind is not being actively used – do not remove them

@@ -1,11 +1,10 @@
 import { AppError } from "./errors.js";
 
 /**
- * Vercel ↔ Supabase integration injects POSTGRES_* URLs, not DATABASE_URL.
- * Order: explicit DATABASE_URL wins, then typical integration keys.
+ * Строка подключения к Postgres только из переменных интеграции Vercel ↔ Supabase
+ * (без DATABASE_URL — не используется).
  */
 const POSTGRES_ENV_KEYS = [
-  "DATABASE_URL",
   "POSTGRES_URL",
   "POSTGRES_PRISMA_URL",
   "POSTGRES_URL_NON_POOLING",
@@ -78,7 +77,7 @@ export function requirePostgresConnectionString(): string {
   if (!raw) {
     throw new AppError(
       "SERVICE_UNAVAILABLE",
-      "Нет строки подключения к Postgres: задайте DATABASE_URL или переменные интеграции Vercel+Supabase (POSTGRES_URL).",
+      "Нет строки подключения к Postgres: задайте POSTGRES_URL, POSTGRES_PRISMA_URL или POSTGRES_URL_NON_POOLING.",
       503
     );
   }
