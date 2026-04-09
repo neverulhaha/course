@@ -1,12 +1,38 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { supabase } from "@/lib/supabase/client";
+import * as authService from "@/services/auth.service";
 import SuspenseFallback from "@/app/SuspenseFallback";
 
 /**
- * Redirect URI для OAuth и ссылок из писем Supabase (подтверждение email и т.п.).
- * После обмена кода/фрагмента URL сессия подхватывается клиентом (`detectSessionInUrl`).
+ * Redirect URI для OAuth (Google) и ссылок из писем Supabase (подтверждение email).
+ * PKCE + `detectSessionInUrl`: при загрузке с `?code=` сессия подхватывается в `getSession()`.
  */
+function readOAuthErrorFromUrl(): { code: string; description?: string } | null {
+  const search = new URLSearchParams(window.location.search);
+  let code = search.get("error");
+  let description = search.get("error_description") ?? undefined;
+
+  if (!code && window.location.hash.length > 1) {
+    const hp = new URLSearchParams(window.location.hash.slice(1));
+    code = hp.get("error");
+    description = hp.get("error_description") ?? description;
+  }
+
+  if (!code) return null;
+  return { code, description: description ?? undefined };
+}
+
+async function waitForSession(maxAttempts = 5, delayMs = 150): Promise<Awaited<ReturnType<typeof supabase.auth.getSession>>> {
+  let last: Awaited<ReturnType<typeof supabase.auth.getSession>> | null = null;
+  for (let i = 0; i < maxAttempts; i++) {
+    last = await supabase.auth.getSession();
+    if (last.data.session || last.error) return last;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return last ?? { data: { session: null }, error: null };
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [message, setMessage] = useState<string | null>(null);
@@ -15,19 +41,35 @@ export default function AuthCallback() {
     let active = true;
 
     void (async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      const urlErr = readOAuthErrorFromUrl();
+      if (urlErr) {
+        authService.clearOAuthFlowMarkers();
+        if (!active) return;
+        setMessage(authService.oauthRedirectErrorMessage(urlErr.code, urlErr.description));
+        return;
+      }
+
+      const { data: { session }, error } = await waitForSession();
+
       if (!active) return;
 
       if (error) {
-        setMessage(error.message);
+        authService.clearOAuthFlowMarkers();
+        setMessage(authService.authErrorMessage(error));
         return;
       }
 
       if (session) {
-        navigate("/app", { replace: true });
+        const next = authService.consumeOAuthReturnPath();
+        if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(authService.OAUTH_GOOGLE_FLOW_KEY) === "1") {
+          sessionStorage.removeItem(authService.OAUTH_GOOGLE_FLOW_KEY);
+          sessionStorage.setItem(authService.OAUTH_SUCCESS_BANNER_KEY, authService.OAUTH_SUCCESS_BANNER_TEXT);
+        }
+        navigate(next, { replace: true });
         return;
       }
 
+      authService.clearOAuthFlowMarkers();
       setMessage("Не удалось войти. Ссылка могла устареть — запросите новую.");
     })();
 

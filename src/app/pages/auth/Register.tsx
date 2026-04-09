@@ -1,7 +1,8 @@
 ﻿import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Mail, Lock, User, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AuthLayout, AuthCard, InputField, AuthDivider } from "./AuthLayout";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 import * as authService from "@/services/auth.service";
 
 function PasswordStrength({ password }: { password: string }) {
@@ -68,8 +69,20 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
+type RegisterLocationState = {
+  from?: Pick<Location, "pathname" | "search" | "hash">;
+};
+
 export default function Register() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const regState = (location.state ?? null) as RegisterLocationState | null;
+  const from = regState?.from;
+  const oauthNextPath =
+    from?.pathname && from.pathname !== "/auth/register"
+      ? `${from.pathname}${from.search ?? ""}${from.hash ?? ""}`
+      : "/app";
+
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -271,9 +284,16 @@ export default function Register() {
           </button>
         </form>
 
-        {/* Divider + guest */}
         <div className="mt-5 sm:mt-6 flex flex-col gap-3">
           <AuthDivider />
+          <GoogleSignInButton
+            nextPath={oauthNextPath}
+            disabled={loading}
+            onError={(msg) => setError(msg || null)}
+          />
+        </div>
+
+        <div className="mt-5 sm:mt-6 flex flex-col gap-3">
           <button
             type="button"
             onClick={() => navigate("/")}

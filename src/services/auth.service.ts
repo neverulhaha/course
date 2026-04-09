@@ -84,6 +84,9 @@ function translateKnownEnglishMessage(message: string): string | null {
   if (lower.includes("network") || lower.includes("fetch")) {
     return "Нет соединения с сетью. Проверьте интернет и попробуйте снова.";
   }
+  if (lower === "access_denied" || lower.includes("access_denied")) {
+    return "Вход отменён.";
+  }
   return null;
 }
 
@@ -126,6 +129,90 @@ export function authErrorMessage(error: unknown): string {
 function appOrigin(): string {
   if (typeof window === "undefined") return "";
   return window.location.origin;
+}
+
+/** Путь возврата после OAuth (относительный, только свой origin). */
+const OAUTH_RETURN_PATH_KEY = "sb:oauth_return_path";
+/** Маркер: успешный вход именно через Google (не путать с подтверждением email по ссылке). */
+export const OAUTH_GOOGLE_FLOW_KEY = "sb:oauth_google_flow";
+/** Одноразовое сообщение для зелёного баннера в приложении после Google OAuth. */
+export const OAUTH_SUCCESS_BANNER_KEY = "sb:oauth_success_banner";
+export const OAUTH_SUCCESS_BANNER_TEXT =
+  "Вы успешно вошли через Google. Добро пожаловать!";
+
+function normalizeInternalReturnPath(path: string | null): string {
+  if (!path || typeof path !== "string") return "/app";
+  const t = path.trim();
+  if (!t.startsWith("/") || t.startsWith("//")) return "/app";
+  if (/^\/\w+:/.test(t)) return "/app";
+  return t;
+}
+
+export function setOAuthReturnPath(path: string): void {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(OAUTH_RETURN_PATH_KEY, normalizeInternalReturnPath(path));
+}
+
+/** Считать и удалить сохранённый путь (вызывать на `/auth/callback`). */
+export function consumeOAuthReturnPath(): string {
+  if (typeof sessionStorage === "undefined") return "/app";
+  const raw = sessionStorage.getItem(OAUTH_RETURN_PATH_KEY);
+  sessionStorage.removeItem(OAUTH_RETURN_PATH_KEY);
+  return normalizeInternalReturnPath(raw);
+}
+
+export function clearOAuthFlowMarkers(): void {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(OAUTH_RETURN_PATH_KEY);
+  sessionStorage.removeItem(OAUTH_GOOGLE_FLOW_KEY);
+}
+
+/** Ошибки в query/hash после редиректа провайдера (отмена, ошибка сервера). */
+export function oauthRedirectErrorMessage(code: string, description?: string): string {
+  const c = code.trim().toLowerCase();
+  if (c === "access_denied") {
+    return "Вы отменили вход через Google.";
+  }
+  if (description && hasCyrillic(description)) {
+    return description;
+  }
+  if (description && description.length > 0) {
+    const d = description.replace(/\+/g, " ");
+    if (/access denied/i.test(d)) return "Вы отменили вход через Google.";
+    return d;
+  }
+  return "Не удалось войти через Google. Попробуйте ещё раз.";
+}
+
+/**
+ * Редирект на Google; после успеха Supabase вернёт на `redirectTo` (`/auth/callback`).
+ * Существующий пользователь с тем же email подтягивается автоматически (идентичности в одном user).
+ */
+export async function signInWithGoogle(nextPath: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  setOAuthReturnPath(nextPath);
+  sessionStorage.setItem(OAUTH_GOOGLE_FLOW_KEY, "1");
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${appOrigin()}/auth/callback`,
+      skipBrowserRedirect: true,
+    },
+  });
+
+  if (error) {
+    clearOAuthFlowMarkers();
+    throw error;
+  }
+
+  if (data.url) {
+    window.location.assign(data.url);
+    return;
+  }
+
+  clearOAuthFlowMarkers();
+  throw new Error("Не получен URL для входа через Google.");
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<Session> {

@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router";
 import {
   Sparkles,
@@ -15,6 +15,7 @@ import {
 import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "@/hooks/useAuth";
 import type { User } from "@supabase/supabase-js";
+import { OAUTH_SUCCESS_BANNER_KEY } from "@/services/auth.service";
 
 function userInitials(user: User): string {
   const raw = user.user_metadata?.full_name;
@@ -455,6 +456,19 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [oauthBanner, setOauthBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const msg = sessionStorage.getItem(OAUTH_SUCCESS_BANNER_KEY);
+      if (msg) {
+        sessionStorage.removeItem(OAUTH_SUCCESS_BANNER_KEY);
+        setOauthBanner(msg);
+      }
+    } catch {
+      /* sessionStorage недоступен */
+    }
+  }, []);
 
   return (
     <div
@@ -543,6 +557,35 @@ export default function AppLayout() {
             </span>
           </div>
         </div>
+
+        {oauthBanner && (
+          <div
+            role="status"
+            className="flex items-start gap-3 px-4 py-3 md:px-6"
+            style={{
+              background: "rgba(46, 204, 113, 0.1)",
+              borderBottom: "1px solid rgba(46, 204, 113, 0.25)",
+              color: "#1E8449",
+              fontSize: "var(--text-sm)",
+            }}
+          >
+            <span className="flex-1 min-w-0 pt-0.5">{oauthBanner}</span>
+            <button
+              type="button"
+              onClick={() => setOauthBanner(null)}
+              aria-label="Закрыть"
+              className="shrink-0 p-1.5 rounded-lg touch-manipulation"
+              style={{
+                color: "#1E8449",
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+              }}
+            >
+              <X style={{ width: 16, height: 16 }} />
+            </button>
+          </div>
+        )}
 
         <Outlet />
       </main>

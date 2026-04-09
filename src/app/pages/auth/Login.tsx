@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AuthLayout, AuthCard, InputField, AuthDivider } from "./AuthLayout";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 import * as authService from "@/services/auth.service";
 
 type LoginLocationState = {
@@ -180,9 +181,16 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Divider + guest */}
         <div className="mt-5 sm:mt-6 flex flex-col gap-3">
           <AuthDivider />
+          <GoogleSignInButton
+            nextPath={redirectTo}
+            disabled={loading}
+            onError={(msg) => setError(msg || null)}
+          />
+        </div>
+
+        <div className="mt-5 sm:mt-6 flex flex-col gap-3">
           <button
             type="button"
             onClick={() => navigate("/")}
