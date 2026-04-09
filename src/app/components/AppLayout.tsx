@@ -1,5 +1,5 @@
 ﻿import { useState } from "react";
-import { Outlet, Link, useLocation } from "react-router";
+import { Outlet, Link, useLocation, useNavigate } from "react-router";
 import {
   Sparkles,
   LayoutDashboard,
@@ -13,6 +13,29 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "@/hooks/useAuth";
+import type { User } from "@supabase/supabase-js";
+
+function userInitials(user: User): string {
+  const raw = user.user_metadata?.full_name;
+  const fullName = typeof raw === "string" ? raw.trim() : "";
+  if (fullName) {
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return fullName.slice(0, 2).toUpperCase();
+  }
+  const email = user.email ?? "";
+  return email.slice(0, 2).toUpperCase() || "??";
+}
+
+function displayName(user: User): string {
+  const raw = user.user_metadata?.full_name;
+  const fullName = typeof raw === "string" ? raw.trim() : "";
+  if (fullName) return fullName;
+  return user.email?.split("@")[0] ?? "Пользователь";
+}
 
 /* ─── Constants ───────────────────────────────────────────── */
 
@@ -177,6 +200,9 @@ function ActionButton({
 /* ─── User block ──────────────────────────────────────────── */
 
 function UserBlock({ onClose }: { onClose?: () => void }) {
+  const { user } = useAuth();
+  if (!user) return null;
+
   return (
     <Link
       to="/app/profile"
@@ -201,7 +227,7 @@ function UserBlock({ onClose }: { onClose?: () => void }) {
           userSelect: "none",
         }}
       >
-        ПЛ
+        {userInitials(user)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p
@@ -212,10 +238,10 @@ function UserBlock({ onClose }: { onClose?: () => void }) {
             lineHeight: 1.3,
           }}
         >
-          Пользователь
+          {displayName(user)}
         </p>
         <p style={{ fontFamily: FONT, fontSize: "10px", color: "var(--gray-400)", marginTop: 1 }}>
-          Студент
+          {user.email ?? ""}
         </p>
       </div>
     </Link>
@@ -226,7 +252,17 @@ function UserBlock({ onClose }: { onClose?: () => void }) {
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const active = getActive(location.pathname);
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } finally {
+      navigate("/auth/login", { replace: true });
+    }
+  };
 
   return (
     <aside
@@ -408,7 +444,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
             />
             Настройки
           </Link>
-          <ActionButton icon={LogOut} label="Выйти" />
+          <ActionButton icon={LogOut} label="Выйти" onClick={handleLogout} />
         </div>
       </div>
     </aside>

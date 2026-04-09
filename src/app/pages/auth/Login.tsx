@@ -1,13 +1,25 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AuthLayout, AuthCard, InputField, AuthDivider } from "./AuthLayout";
-import { login } from "@/api/auth";
-import { apiErrorMessage } from "@/api/client";
-import { persistSession } from "@/api/session";
+import * as authService from "@/services/auth.service";
+
+type LoginLocationState = {
+  from?: Pick<Location, "pathname" | "search" | "hash">;
+  registrationMessage?: string;
+};
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const state = (location.state ?? null) as LoginLocationState | null;
+  const from = state?.from;
+  const redirectTo =
+    from?.pathname && from.pathname !== "/auth/login"
+      ? `${from.pathname}${from.search ?? ""}${from.hash ?? ""}`
+      : "/app";
+  const registrationMessage = state?.registrationMessage ?? null;
+
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,11 +31,10 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      const out = await login({ email: email.trim(), password });
-      persistSession(out);
-      navigate("/app");
+      await authService.signInWithPassword(email.trim(), password);
+      navigate(redirectTo, { replace: true });
     } catch (err) {
-      setError(apiErrorMessage(err));
+      setError(authService.authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -67,6 +78,19 @@ export default function Login() {
           onSubmit={handleSubmit}
           className="flex flex-col gap-4 sm:gap-4"
         >
+          {registrationMessage && (
+            <div
+              role="status"
+              className="rounded-lg px-3 py-2"
+              style={{
+                fontSize: "var(--text-sm)",
+                background: "rgba(46, 204, 113, 0.1)",
+                color: "#1E8449",
+              }}
+            >
+              {registrationMessage}
+            </div>
+          )}
           {error && (
             <div
               role="alert"
@@ -161,11 +185,11 @@ export default function Login() {
           <AuthDivider />
           <button
             type="button"
-            onClick={() => navigate("/app")}
+            onClick={() => navigate("/")}
             className="vs-btn vs-btn-secondary w-full touch-manipulation min-h-12 sm:min-h-[44px]"
             style={{ fontSize: "var(--text-sm)", justifyContent: "center" }}
           >
-            Войти как гость
+            На главную
           </button>
         </div>
       </AuthCard>

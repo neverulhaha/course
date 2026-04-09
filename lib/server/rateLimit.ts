@@ -19,7 +19,7 @@ export function checkRateLimit(
   if (b.count > opts.max) {
     throw new AppError(
       "RATE_LIMITED",
-      opts.message ?? "Too many requests",
+      opts.message ?? "Слишком много запросов",
       429
     );
   }

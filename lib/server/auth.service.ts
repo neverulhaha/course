@@ -47,14 +47,14 @@ function mapPgUniqueAndConstraints(err: unknown): AppError | null {
   if (e.code === "23505") {
     return new AppError(
       "EMAIL_ALREADY_REGISTERED",
-      "An account with this email already exists",
+      "Аккаунт с таким email уже зарегистрирован",
       409
     );
   }
   if (e.code === "23502") {
     return new AppError(
       "VALIDATION_ERROR",
-      "Missing required field",
+      "Не заполнено обязательное поле",
       400,
       { pg: e.message }
     );
@@ -62,7 +62,7 @@ function mapPgUniqueAndConstraints(err: unknown): AppError | null {
   if (e.code === "23514") {
     return new AppError(
       "VALIDATION_ERROR",
-      "Value does not satisfy database constraints",
+      "Данные не проходят проверку в базе",
       400,
       { pg: e.message }
     );
@@ -70,7 +70,7 @@ function mapPgUniqueAndConstraints(err: unknown): AppError | null {
   if (e.code === "42703" || e.code === "42883") {
     return new AppError(
       "INTERNAL_ERROR",
-      "Database schema mismatch",
+      "Несовпадение схемы базы данных",
       500
     );
   }
@@ -85,35 +85,35 @@ function mapInfrastructureError(e: unknown): AppError | null {
   if (c === "ENOTFOUND" || c === "EAI_AGAIN") {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Database host not found (DNS). Re-copy DATABASE_URL from Supabase → Project Settings → Database → Connection string (URI). Fix typos in the hostname or project ref; pooler host differs from db.<ref>.supabase.co.",
+      "Сервер базы не найден (DNS). Проверьте строку подключения в Supabase и переменные POSTGRES_URL / DATABASE_URL на Vercel.",
       503
     );
   }
   if (c === "ECONNREFUSED" || c === "ETIMEDOUT") {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Cannot reach the database (connection refused or timeout). Check port (5432 direct vs 6543 pooler) and that the Supabase project is not paused.",
+      "База данных недоступна (таймаут или отказ). Проверьте порт и что проект Supabase не на паузе.",
       503
     );
   }
   if (typeof c === "string" && /^08/.test(c)) {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Database connection failed",
+      "Ошибка соединения с базой данных",
       503
     );
   }
   if (c === "28P01" || m.includes("password authentication failed")) {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Database authentication failed — check DATABASE_URL",
+      "Неверный логин или пароль к базе — проверьте строку подключения",
       503
     );
   }
   if (m.includes("certificate") || (m.includes("ssl") && m.includes("fail"))) {
     return new AppError(
       "SERVICE_UNAVAILABLE",
-      "Database TLS error — check POSTGRES_URL / DATABASE_URL; Vercel+Supabase strings with sslmode=verify-full are normalized in the app (retry deploy).",
+      "Ошибка TLS при подключении к базе. Проверьте POSTGRES_URL; после деплоя попробуйте снова.",
       503
     );
   }
@@ -257,7 +257,7 @@ export async function registerUser(
       });
       throw new AppError(
         "EMAIL_ALREADY_REGISTERED",
-        "An account with this email already exists",
+        "Аккаунт с таким email уже зарегистрирован",
         409
       );
     }
@@ -266,7 +266,7 @@ export async function registerUser(
     logPgError("register email uniqueness check", e);
     const infra = mapInfrastructureError(e);
     if (infra) throw infra;
-    throw new AppError("INTERNAL_ERROR", "Could not verify email", 500);
+    throw new AppError("INTERNAL_ERROR", "Не удалось проверить email", 500);
   }
 
   const passwordHash = await hashPassword(password);
@@ -293,7 +293,7 @@ export async function registerUser(
     if (mapped) throw mapped;
     throw new AppError(
       "INTERNAL_ERROR",
-      "Could not create user",
+      "Не удалось создать пользователя",
       500
     );
   }
@@ -321,7 +321,7 @@ export async function registerUser(
     if (mapped) throw mapped;
     throw new AppError(
       "INTERNAL_ERROR",
-      "Could not create session",
+      "Не удалось создать сессию",
       500
     );
   }
@@ -374,7 +374,7 @@ export async function loginUser(
     console.info("[auth:login] failed", { email: maskEmail(email), found: !!row });
     throw new AppError(
       "INVALID_CREDENTIALS",
-      "Invalid email or password",
+      "Неверный email или пароль",
       401
     );
   }
@@ -405,7 +405,7 @@ export async function loginUser(
     if (infra) throw infra;
     throw new AppError(
       "INTERNAL_ERROR",
-      "Could not create session",
+      "Не удалось создать сессию",
       500
     );
   }
@@ -473,7 +473,7 @@ export async function refreshSession(
       console.info("[auth:refresh] invalid or expired token");
       throw new AppError(
         "UNAUTHORIZED",
-        "Invalid or expired refresh token",
+        "Сессия недействительна или истекла — войдите снова",
         401
       );
     }
@@ -490,7 +490,7 @@ export async function refreshSession(
     );
     const userRow = u.rows[0];
     if (!userRow) {
-      throw new AppError("UNAUTHORIZED", "User not found", 401);
+      throw new AppError("UNAUTHORIZED", "Пользователь не найден", 401);
     }
 
     const { token: accessToken, expiresAt: accessExp } = signAccessToken(
@@ -510,14 +510,14 @@ export async function refreshSession(
     if (infra) throw infra;
     throw new AppError(
       "INTERNAL_ERROR",
-      "Could not refresh session",
+      "Не удалось обновить сессию",
       500
     );
   }
 }
 
 const FORGOT_OK_MESSAGE =
-  "If an account exists for this email, you will receive password reset instructions.";
+  "Если аккаунт с таким email есть, мы отправим инструкцию по сбросу пароля.";
 
 export async function requestPasswordReset(email: string): Promise<{
   message: string;
@@ -554,7 +554,7 @@ export async function requestPasswordReset(email: string): Promise<{
       logPgError("password_reset_tokens", e);
       throw new AppError(
         "INTERNAL_ERROR",
-        "Could not start password reset",
+        "Не удалось начать сброс пароля",
         500
       );
     }
@@ -585,7 +585,7 @@ export async function resetPasswordWithToken(
       console.info("[auth:reset-password] invalid or expired token");
       throw new AppError(
         "TOKEN_INVALID",
-        "Invalid or expired reset token",
+        "Ссылка сброса недействительна или истекла",
         400
       );
     }
@@ -604,14 +604,14 @@ export async function resetPasswordWithToken(
     );
     console.info("[auth:reset-password] ok", { userId: pr.user_id });
     return {
-      message: "Password has been reset. You can sign in with your new password.",
+      message: "Пароль изменён. Войдите с новым паролем.",
     };
   } catch (e) {
     if (e instanceof AppError) throw e;
     logPgError("resetPasswordWithToken", e);
     throw new AppError(
       "INTERNAL_ERROR",
-      "Could not reset password",
+      "Не удалось сбросить пароль",
       500
     );
   }

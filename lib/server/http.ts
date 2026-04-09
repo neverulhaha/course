@@ -29,7 +29,7 @@ export function requireMethod(req: VercelRequest, method: string): void {
   if (req.method !== method) {
     throw new AppError(
       "METHOD_NOT_ALLOWED",
-      `Method ${method} required`,
+      `Требуется метод ${method}`,
       405
     );
   }

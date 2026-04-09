@@ -17,7 +17,7 @@ function required(name: string): string {
   if (!v) {
     throw new AppError(
       "INTERNAL_ERROR",
-      `Missing required configuration: ${name}`,
+      `Не задана обязательная настройка: ${name}`,
       500
     );
   }
@@ -32,7 +32,7 @@ function jwtAccessSecretFromEnv(): string {
   if (!raw) {
     throw new AppError(
       "INTERNAL_ERROR",
-      "Missing JWT_ACCESS_SECRET or SUPABASE_JWT_SECRET",
+      "Задайте JWT_ACCESS_SECRET или SUPABASE_JWT_SECRET",
       500
     );
   }

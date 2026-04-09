@@ -123,7 +123,7 @@ export default async function handler(
     const op = resolveOp(req);
     if (!op) {
       console.warn("[api/auth] missing __op; url=", req.url);
-      throw new AppError("NOT_FOUND", "Unknown auth route", 404);
+      throw new AppError("NOT_FOUND", "Неизвестный маршрут API", 404);
     }
 
     logRequest(req, op);
@@ -134,7 +134,7 @@ export default async function handler(
         checkRateLimit(`register:${ip}`, {
           windowMs: 15 * 60 * 1000,
           max: 5,
-          message: "Too many registration attempts",
+          message: "Слишком много попыток регистрации. Подождите 15 минут.",
         });
         logRegisterRequestBody(req);
         const body = parseBody(registerBodySchema, parseJsonBody(req));
@@ -154,7 +154,7 @@ export default async function handler(
         checkRateLimit(`login:${ip}`, {
           windowMs: 15 * 60 * 1000,
           max: 10,
-          message: "Too many login attempts",
+          message: "Слишком много попыток входа. Подождите 15 минут.",
         });
         const body = parseBody(loginBodySchema, parseJsonBody(req));
         const out = await loginUser(body.email, body.password, ua, ip);
@@ -191,7 +191,7 @@ export default async function handler(
         checkRateLimit(`forgot:${ip}`, {
           windowMs: 60 * 60 * 1000,
           max: 3,
-          message: "Too many password reset requests",
+          message: "Слишком много запросов сброса пароля. Попробуйте позже.",
         });
         const body = parseBody(forgotPasswordBodySchema, parseJsonBody(req));
         const out = await requestPasswordReset(body.email);
@@ -222,7 +222,7 @@ export default async function handler(
         if (!m) {
           throw new AppError(
             "UNAUTHORIZED",
-            "Missing or invalid Authorization header",
+            "Нет или неверный заголовок Authorization",
             401
           );
         }
@@ -231,20 +231,20 @@ export default async function handler(
           ({ sub } = verifyAccessToken(m[1]));
         } catch (e) {
           if (e instanceof jwt.TokenExpiredError) {
-            throw new AppError("TOKEN_EXPIRED", "Access token expired", 401);
+            throw new AppError("TOKEN_EXPIRED", "Срок действия токена истёк", 401);
           }
-          throw new AppError("TOKEN_INVALID", "Invalid access token", 401);
+          throw new AppError("TOKEN_INVALID", "Недействительный токен доступа", 401);
         }
         const user = await getUserById(sub);
         if (!user) {
-          throw new AppError("UNAUTHORIZED", "User not found", 401);
+          throw new AppError("UNAUTHORIZED", "Пользователь не найден", 401);
         }
         res.status(200).json(user);
         break;
       }
 
       default:
-        throw new AppError("NOT_FOUND", "Unknown auth route", 404);
+        throw new AppError("NOT_FOUND", "Неизвестный маршрут API", 404);
     }
   } catch (e) {
     const { status, body } = toErrorBody(e);

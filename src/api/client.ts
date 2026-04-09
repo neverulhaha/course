@@ -1,4 +1,4 @@
-import { AUTH_ACCESS_KEY } from "./session";
+import { getAccessToken } from "@/services/auth.service";
 
 const DEFAULT_BASE = "/api";
 
@@ -26,7 +26,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const { body, baseUrl = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_BASE, headers, ...rest } = options;
 
   const token =
-    typeof window !== "undefined" ? localStorage.getItem(AUTH_ACCESS_KEY) : null;
+    typeof window !== "undefined" ? await getAccessToken() : null;
 
   const res = await fetch(`${baseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`, {
     ...rest,

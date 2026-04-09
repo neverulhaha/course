@@ -46,7 +46,7 @@ export function toErrorBody(err: unknown): {
     body: {
       error: {
         code: "INTERNAL_ERROR" as const,
-        message: "An unexpected error occurred",
+        message: "Внутренняя ошибка сервера",
       },
     },
   };

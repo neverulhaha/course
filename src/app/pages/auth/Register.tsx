@@ -2,16 +2,24 @@
 import { Link, useNavigate } from "react-router";
 import { Mail, Lock, User, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AuthLayout, AuthCard, InputField, AuthDivider } from "./AuthLayout";
-import { register } from "@/api/auth";
-import { apiErrorMessage } from "@/api/client";
-import { persistSession } from "@/api/session";
+import * as authService from "@/services/auth.service";
 
 function PasswordStrength({ password }: { password: string }) {
-  const score =
-    password.length === 0 ? 0 :
-    password.length < 6   ? 1 :
-    password.length < 10  ? 2 :
-    /[A-Z]/.test(password) && /[0-9]/.test(password) ? 4 : 3;
+  let score = 0;
+  if (password.length > 0) {
+    if (password.length < 10) {
+      score = 1;
+    } else {
+      const hasLower = /[a-z]/.test(password);
+      const hasUpper = /[A-Z]/.test(password);
+      const hasDigit = /[0-9]/.test(password);
+      const hasSpec = /[!@#$%^&*()_+\-=[\]{}|;:,.?/`~]/.test(password);
+      const n = [hasLower, hasUpper, hasDigit, hasSpec].filter(Boolean).length;
+      if (n === 4) score = 4;
+      else if (n >= 2) score = 3;
+      else score = 2;
+    }
+  }
 
   const segments = [
     { min: 1, color: "#E74C3C" },
@@ -74,15 +82,24 @@ export default function Register() {
     setError(null);
     setLoading(true);
     try {
-      const out = await register({
-        name: name.trim(),
-        email: email.trim(),
+      const { session } = await authService.signUpWithPassword(
+        email.trim(),
         password,
+        name.trim()
+      );
+      if (session) {
+        navigate("/app", { replace: true });
+        return;
+      }
+      navigate("/auth/login", {
+        replace: true,
+        state: {
+          registrationMessage:
+            "Регистрация прошла успешно. Если в проекте включено подтверждение email, проверьте почту и перейдите по ссылке — затем войдите с паролём.",
+        },
       });
-      persistSession(out);
-      navigate("/app");
     } catch (err) {
-      setError(apiErrorMessage(err));
+      setError(authService.authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -179,7 +196,7 @@ export default function Register() {
                 id="register-password"
                 name="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Минимум 8 символов, заглавная буква и цифра"
+                placeholder="От 10 символов: a–z, A–Z, цифра, спецсимвол"
                 autoComplete="new-password"
                 required
                 value={password}
@@ -204,6 +221,16 @@ export default function Register() {
               </button>
             </div>
             <PasswordStrength password={password} />
+            <p
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--gray-500)",
+                marginTop: "6px",
+                lineHeight: "var(--leading-snug)",
+              }}
+            >
+              Требования: ≥10 символов, латиница a–z и A–Z, цифра, спецсимвол; без части email и без вашего имени в пароле.
+            </p>
           </div>
 
           {/* Terms */}
@@ -249,11 +276,11 @@ export default function Register() {
           <AuthDivider />
           <button
             type="button"
-            onClick={() => navigate("/app")}
+            onClick={() => navigate("/")}
             className="vs-btn vs-btn-secondary w-full touch-manipulation min-h-12 sm:min-h-[44px]"
             style={{ fontSize: "var(--text-sm)", justifyContent: "center" }}
           >
-            Попробовать без регистрации
+            На главную
           </button>
         </div>
       </AuthCard>

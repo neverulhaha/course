@@ -2,6 +2,7 @@
 import { Link } from "react-router";
 import { Mail, ArrowLeft, CheckCircle, Send } from "lucide-react";
 import { AuthLayout, AuthCard, InputField } from "./AuthLayout";
+import * as authService from "@/services/auth.service";
 
 function SuccessState({ email }: { email: string }) {
   return (
@@ -126,10 +127,21 @@ function SuccessState({ email }: { email: string }) {
 export default function ForgotPassword() {
   const [submitted, setSubmitted] = useState(false);
   const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setError(null);
+    setLoading(true);
+    try {
+      await authService.requestPasswordReset(email.trim());
+      setSubmitted(true);
+    } catch (err) {
+      setError(authService.authErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -177,6 +189,19 @@ export default function ForgotPassword() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {error && (
+              <div
+                role="alert"
+                className="rounded-lg px-3 py-2"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  background: "rgba(231, 76, 60, 0.1)",
+                  color: "#C0392B",
+                }}
+              >
+                {error}
+              </div>
+            )}
             <div className="min-w-0">
               <label className="vs-label">Email</label>
               <div className="relative">
@@ -191,6 +216,7 @@ export default function ForgotPassword() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
+                  disabled={loading}
                   className="vs-input w-full min-h-[48px] sm:min-h-[44px] touch-manipulation"
                   style={{ paddingLeft: "40px", paddingRight: "14px", fontSize: "max(16px, var(--text-sm))" }}
                 />
@@ -199,11 +225,12 @@ export default function ForgotPassword() {
 
             <button
               type="submit"
+              disabled={loading}
               className="vs-btn vs-btn-primary w-full touch-manipulation min-h-12 sm:min-h-[44px]"
               style={{ fontSize: "var(--text-sm)", justifyContent: "center", marginTop: "4px" }}
             >
               <Send className="w-4 h-4" />
-              Отправить ссылку
+              {loading ? "Отправка…" : "Отправить ссылку"}
             </button>
           </form>
 

@@ -7,8 +7,11 @@ import Landing from "./pages/Landing";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
+import AuthCallback from "./pages/auth/AuthCallback";
+import UpdatePassword from "./pages/auth/UpdatePassword";
 import Dashboard from "./pages/Dashboard";
 import AppLayout from "./components/AppLayout";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
 // Lazy-loaded (heavy pages, never the first page shown)
 const CreateCourse    = lazy(() => import("./pages/CreateCourse"));
@@ -39,11 +42,17 @@ export const router = createBrowserRouter([
   { path: "/auth/login",       Component: Login },
   { path: "/auth/register",    Component: Register },
   { path: "/auth/forgot",      Component: ForgotPassword },
+  { path: "/auth/callback",    Component: AuthCallback },
+  { path: "/auth/update-password", Component: UpdatePassword },
 
   /* ── App (authenticated) ── */
   {
     path: "/app",
-    Component: AppLayout,
+    element: (
+      <ProtectedRoute>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
     children: [
       { index: true,                               Component: Dashboard },
       { path: "create",       element: <Lazy><CreateCourse /></Lazy> },

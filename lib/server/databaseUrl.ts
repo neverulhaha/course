@@ -78,7 +78,7 @@ export function requirePostgresConnectionString(): string {
   if (!raw) {
     throw new AppError(
       "SERVICE_UNAVAILABLE",
-      "Postgres connection string missing: set DATABASE_URL or use Vercel Supabase integration (POSTGRES_URL / POSTGRES_PRISMA_URL).",
+      "Нет строки подключения к Postgres: задайте DATABASE_URL или переменные интеграции Vercel+Supabase (POSTGRES_URL).",
       503
     );
   }

@@ -1,3 +1,7 @@
+/**
+ * Серверные маршруты `/api/auth/*` (кастомный JWT). Клиентский UI переведён на Supabase Auth — см. `@/services/auth.service`.
+ * Импортируйте этот модуль напрямую только если осознанно вызываете старый API.
+ */
 import { apiRequest } from "./client";
 import { AUTH_REFRESH_KEY } from "./session";
 import type { AuthTokens, User } from "./types";
