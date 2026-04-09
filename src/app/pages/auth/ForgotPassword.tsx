@@ -5,6 +5,25 @@ import { AuthLayout, AuthCard, InputField } from "./AuthLayout";
 import * as authService from "@/services/auth.service";
 
 function SuccessState({ email }: { email: string }) {
+  const [resending, setResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<{ kind: "success" | "error"; text: string } | null>(
+    null
+  );
+
+  const handleResend = async () => {
+    if (!email.trim() || resending) return;
+    setResendNotice(null);
+    setResending(true);
+    try {
+      await authService.requestPasswordReset(email.trim());
+      setResendNotice({ kind: "success", text: "Письмо отправлено повторно. Проверьте почту." });
+    } catch (err) {
+      setResendNotice({ kind: "error", text: authService.authErrorMessage(err) });
+    } finally {
+      setResending(false);
+    }
+  };
+
   return (
     <AuthCard>
       <div className="text-center min-w-0">
@@ -93,6 +112,22 @@ function SuccessState({ email }: { email: string }) {
           </ol>
         </div>
 
+        {resendNotice && (
+          <div
+            role={resendNotice.kind === "error" ? "alert" : "status"}
+            className="rounded-lg px-3 py-2 text-left"
+            style={{
+              fontSize: "var(--text-sm)",
+              marginBottom: "12px",
+              ...(resendNotice.kind === "error"
+                ? { background: "rgba(231, 76, 60, 0.1)", color: "#C0392B" }
+                : { background: "rgba(46, 204, 113, 0.1)", color: "#1E8449" }),
+            }}
+          >
+            {resendNotice.text}
+          </div>
+        )}
+
         <p
           className="text-pretty px-0.5"
           style={{
@@ -104,10 +139,12 @@ function SuccessState({ email }: { email: string }) {
           Не получили письмо? Проверьте папку «Спам» или{" "}
           <button
             type="button"
-            className="font-semibold transition-colors touch-manipulation min-h-11 inline-flex items-center px-0.5 -mx-0.5"
+            onClick={() => void handleResend()}
+            disabled={resending}
+            className="font-semibold transition-colors touch-manipulation min-h-11 inline-flex items-center px-0.5 -mx-0.5 disabled:opacity-50"
             style={{ color: "var(--brand-blue)", background: "none", border: "none", cursor: "pointer" }}
           >
-            отправьте повторно
+            {resending ? "Отправка…" : "отправьте повторно"}
           </button>
         </p>
 
