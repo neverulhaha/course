@@ -22,7 +22,8 @@ const AUTH_ERROR_CODE_RU: Record<string, string> = {
   user_banned: "Доступ к аккаунту ограничен. Обратитесь в поддержку.",
   user_not_found: "Пользователь с таким email не найден.",
   validation_failed: "Проверьте введённые данные.",
-  unexpected_failure: "Сервис временно недоступен. Попробуйте позже.",
+  unexpected_failure:
+    "Внутренняя ошибка Supabase Auth. Часто это SMTP при подтверждении email или триггер на auth.users — смотрите Logs → Auth в Dashboard.",
   captcha_failed:
     "Проверка безопасности не пройдена. Обновите страницу и попробуйте снова.",
   email_provider_disabled: "Вход по email отключён в настройках проекта.",
@@ -93,6 +94,31 @@ function translateKnownEnglishMessage(message: string): string | null {
       "Dashboard → Authentication → Providers → Google: включите провайдер и укажите Client ID и Client Secret из Google Cloud Console."
     );
   }
+  if (
+    lower.includes("error sending") ||
+    lower.includes("confirmation email") ||
+    lower.includes("sending confirmation")
+  ) {
+    return (
+      "Не удалось отправить письмо подтверждения. Проверьте Custom SMTP в Supabase: Authentication → Providers → Email, и логи Auth."
+    );
+  }
+  if (lower.includes("database error") || lower.includes("saving new user")) {
+    return (
+      "Ошибка базы при создании пользователя (часто триггер или RLS на auth.users). Проверьте логи Postgres и триггеры в Supabase."
+    );
+  }
+  if (
+    lower.includes("smtp") ||
+    lower.includes("dial tcp") ||
+    lower.includes("535") ||
+    lower.includes("authentication failed") ||
+    lower.includes("certificate")
+  ) {
+    return (
+      "Ошибка подключения к почтовому серверу (SMTP): хост, порт, TLS, логин или пароль приложения в настройках Email в Supabase."
+    );
+  }
   return null;
 }
 
@@ -100,9 +126,13 @@ function hasCyrillic(text: string): boolean {
   return /[\u0400-\u04FF]/.test(text);
 }
 
+const SIGNUP_SERVER_ERROR_HINT =
+  "Сервер Supabase вернул ошибку 500. При регистрации с подтверждением email чаще всего сбой Custom SMTP (Authentication → Providers → Email) или триггер/hook на auth.users. Точную причину смотрите в Dashboard → Logs → Auth.";
+
 export function authErrorMessage(error: unknown): string {
   let message = "";
   let code: string | undefined;
+  let status: number | undefined;
 
   if (error && typeof error === "object") {
     const o = error as Record<string, unknown>;
@@ -110,11 +140,13 @@ export function authErrorMessage(error: unknown): string {
     else if (typeof o.msg === "string") message = o.msg;
     const c = o.code ?? o.error_code;
     if (typeof c === "string" && c.length > 0) code = c;
+    if (typeof o.status === "number") status = o.status;
   } else if (error instanceof Error) {
     message = error.message;
   }
 
   if (!message) {
+    if (status === 500) return SIGNUP_SERVER_ERROR_HINT;
     return "Что-то пошло не так. Попробуйте ещё раз.";
   }
 
@@ -140,6 +172,14 @@ export function authErrorMessage(error: unknown): string {
 
   const byMsg = translateKnownEnglishMessage(message);
   if (byMsg) return byMsg;
+
+  if (status === 500) {
+    const short = message.replace(/\s+/g, " ").trim();
+    if (short.length > 0 && !/^internal server error\.?$/i.test(short)) {
+      return `${SIGNUP_SERVER_ERROR_HINT} (${short})`;
+    }
+    return SIGNUP_SERVER_ERROR_HINT;
+  }
 
   return "Не удалось выполнить действие. Попробуйте ещё раз.";
 }
