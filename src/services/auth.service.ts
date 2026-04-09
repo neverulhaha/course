@@ -87,6 +87,12 @@ function translateKnownEnglishMessage(message: string): string | null {
   if (lower === "access_denied" || lower.includes("access_denied")) {
     return "Вход отменён.";
   }
+  if (lower.includes("unsupported provider") || lower.includes("provider is not enabled")) {
+    return (
+      "Вход через Google не включён в проекте Supabase. " +
+      "Dashboard → Authentication → Providers → Google: включите провайдер и укажите Client ID и Client Secret из Google Cloud Console."
+    );
+  }
   return null;
 }
 
@@ -98,10 +104,11 @@ export function authErrorMessage(error: unknown): string {
   let message = "";
   let code: string | undefined;
 
-  if (error && typeof error === "object" && "message" in error) {
-    const m = (error as AuthError).message;
-    if (typeof m === "string") message = m;
-    const c = (error as { code?: unknown }).code;
+  if (error && typeof error === "object") {
+    const o = error as Record<string, unknown>;
+    if (typeof o.message === "string") message = o.message;
+    else if (typeof o.msg === "string") message = o.msg;
+    const c = o.code ?? o.error_code;
     if (typeof c === "string" && c.length > 0) code = c;
   } else if (error instanceof Error) {
     message = error.message;
@@ -109,6 +116,17 @@ export function authErrorMessage(error: unknown): string {
 
   if (!message) {
     return "Что-то пошло не так. Попробуйте ещё раз.";
+  }
+
+  const lowerMsg = message.toLowerCase();
+  if (
+    code === "validation_failed" &&
+    (lowerMsg.includes("unsupported provider") || lowerMsg.includes("provider is not enabled"))
+  ) {
+    return (
+      "Вход через Google не включён в проекте Supabase. " +
+      "Dashboard → Authentication → Providers → Google: включите провайдер и укажите Client ID и Client Secret из Google Cloud Console."
+    );
   }
 
   if (code) {
