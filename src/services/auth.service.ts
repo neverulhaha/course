@@ -129,6 +129,68 @@ function hasCyrillic(text: string): boolean {
 const SIGNUP_SERVER_ERROR_HINT =
   "Сервер Supabase вернул ошибку 500. При регистрации с подтверждением email чаще всего сбой Custom SMTP (Authentication → Providers → Email) или триггер/hook на auth.users. Точную причину смотрите в Dashboard → Logs → Auth.";
 
+const GOOGLE_PROVIDER_DISABLED_RU =
+  "Вход через Google не включён в этом проекте Supabase. " +
+  "Dashboard → Authentication → Providers → Google: включите «Enable Sign in with Google», укажите Client ID и Client Secret (тип приложения Web в Google Cloud Console). " +
+  "В Google Cloud → Authorized redirect URIs добавьте https://<ваш-ref>.supabase.co/auth/v1/callback (ref — из Project Settings → API).";
+
+/** GoTrue иногда отдаёт code: 400 (число); семантический код — только в error_code (строка). */
+function pickAuthErrorCode(o: Record<string, unknown>): string | undefined {
+  const ec = o.error_code;
+  if (typeof ec === "string" && ec.length > 0) return ec;
+  const c = o.code;
+  if (typeof c === "string" && c.length > 0 && !/^\d+$/.test(c)) return c;
+  return undefined;
+}
+
+function unwrapJsonAuthMessage(message: string): { message: string; code?: string } {
+  const t = message.trim();
+  if (!t.startsWith("{")) return { message };
+  try {
+    const j = JSON.parse(t) as Record<string, unknown>;
+    const innerMsg =
+      typeof j.msg === "string"
+        ? j.msg
+        : typeof j.message === "string"
+          ? j.message
+          : message;
+    const innerCode = pickAuthErrorCode(j);
+    return { message: innerMsg, code: innerCode };
+  } catch {
+    return { message };
+  }
+}
+
+/** Ответ `POST /api/auth/signup-email-check` при конфликте — бросается до `signUp`. */
+async function assertSignupEmailAllowedByBackend(email: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch("/api/auth/signup-email-check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+  } catch {
+    return;
+  }
+  if (res.ok) return;
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== "object") return;
+  const rec = parsed as { code?: unknown; message?: unknown };
+  const msg = typeof rec.message === "string" ? rec.message : "";
+  if (rec.code === "EMAIL_REGISTERED_WITH_GOOGLE" && msg) {
+    throw Object.assign(new Error(msg), { code: "EMAIL_REGISTERED_WITH_GOOGLE" as const });
+  }
+  if (rec.code === "EMAIL_ALREADY_REGISTERED" && msg) {
+    throw Object.assign(new Error(msg), { code: "EMAIL_ALREADY_REGISTERED" as const });
+  }
+}
+
 export function authErrorMessage(error: unknown): string {
   let message = "";
   let code: string | undefined;
@@ -136,10 +198,12 @@ export function authErrorMessage(error: unknown): string {
 
   if (error && typeof error === "object") {
     const o = error as Record<string, unknown>;
+    if (o.code === "EMAIL_REGISTERED_WITH_GOOGLE" || o.code === "EMAIL_ALREADY_REGISTERED") {
+      if (typeof o.message === "string" && o.message.length > 0) return o.message;
+    }
     if (typeof o.message === "string") message = o.message;
     else if (typeof o.msg === "string") message = o.msg;
-    const c = o.code ?? o.error_code;
-    if (typeof c === "string" && c.length > 0) code = c;
+    code = pickAuthErrorCode(o);
     if (typeof o.status === "number") status = o.status;
   } else if (error instanceof Error) {
     message = error.message;
@@ -150,15 +214,13 @@ export function authErrorMessage(error: unknown): string {
     return "Что-то пошло не так. Попробуйте ещё раз.";
   }
 
+  const unwrapped = unwrapJsonAuthMessage(message);
+  message = unwrapped.message;
+  code = code ?? unwrapped.code;
+
   const lowerMsg = message.toLowerCase();
-  if (
-    code === "validation_failed" &&
-    (lowerMsg.includes("unsupported provider") || lowerMsg.includes("provider is not enabled"))
-  ) {
-    return (
-      "Вход через Google не включён в проекте Supabase. " +
-      "Dashboard → Authentication → Providers → Google: включите провайдер и укажите Client ID и Client Secret из Google Cloud Console."
-    );
+  if (lowerMsg.includes("unsupported provider") || lowerMsg.includes("provider is not enabled")) {
+    return GOOGLE_PROVIDER_DISABLED_RU;
   }
 
   if (code) {
@@ -285,6 +347,7 @@ export async function signUpWithPassword(
   password: string,
   fullName: string
 ): Promise<{ session: Session | null; user: User | null }> {
+  await assertSignupEmailAllowedByBackend(email);
   const { data, error } = await supabase.auth.signUp({
     email,
     password,

@@ -5,6 +5,10 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/auth/signup-email-check",
+      "destination": "/api/auth?__op=signup-email-check"
+    },
+    {
       "source": "/api/auth/register",
       "destination": "/api/auth?__op=register"
     },

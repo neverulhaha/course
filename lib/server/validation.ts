@@ -96,6 +96,13 @@ export const refreshBodySchema = z.object({
   refreshToken: z.string().min(1, "Нужен refresh-токен"),
 });
 
+/** Только email — проверка перед signUp в Supabase (без пароля). */
+export const signupEmailCheckBodySchema = z
+  .object({
+    email: emailSchema,
+  })
+  .strict();
+
 export const forgotPasswordBodySchema = z.object({
   email: emailSchema,
 });

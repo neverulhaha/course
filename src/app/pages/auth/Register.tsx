@@ -1,5 +1,6 @@
 ﻿import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
+import { toast } from "sonner";
 import { Mail, Lock, User, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AuthLayout, AuthCard, InputField, AuthDivider } from "./AuthLayout";
 import { GoogleSignInButton } from "./GoogleSignInButton";
@@ -112,7 +113,17 @@ export default function Register() {
         },
       });
     } catch (err) {
-      setError(authService.authErrorMessage(err));
+      const msg = authService.authErrorMessage(err);
+      if (
+        err &&
+        typeof err === "object" &&
+        (err as { code?: string }).code === "EMAIL_REGISTERED_WITH_GOOGLE"
+      ) {
+        setError(null);
+        toast.error(msg);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

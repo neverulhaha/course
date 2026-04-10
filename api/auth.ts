@@ -14,6 +14,11 @@ import {
   resetPasswordWithToken,
 } from "../lib/server/auth.service.js";
 import { AppError, toErrorBody } from "../lib/server/errors.js";
+
+const SIGNUP_GOOGLE_MESSAGE =
+  "Этот email уже зарегистрирован через Google. Войдите через Google.";
+const SIGNUP_EMAIL_TAKEN_MESSAGE =
+  "Пользователь с таким email уже зарегистрирован.";
 import {
   getClientIp,
   parseJsonBody,
@@ -21,6 +26,7 @@ import {
 } from "../lib/server/http.js";
 import { verifyAccessToken } from "../lib/server/jwt.js";
 import { checkRateLimit } from "../lib/server/rateLimit.js";
+import { resolveSignupEmailConflict } from "../lib/server/supabaseAuthIdentities.js";
 import {
   forgotPasswordBodySchema,
   loginBodySchema,
@@ -29,6 +35,7 @@ import {
   refreshBodySchema,
   registerBodySchema,
   resetPasswordBodySchema,
+  signupEmailCheckBodySchema,
 } from "../lib/server/validation.js";
 
 function setCors(req: VercelRequest, res: VercelResponse): void {
@@ -126,6 +133,32 @@ export default async function handler(
     logRequest(req, op);
 
     switch (op) {
+      case "signup-email-check": {
+        requireMethod(req, "POST");
+        checkRateLimit(`signup-email-check:${ip}`, {
+          windowMs: 15 * 60 * 1000,
+          max: 40,
+        });
+        const body = parseBody(signupEmailCheckBodySchema, parseJsonBody(req));
+        const conflict = await resolveSignupEmailConflict(body.email);
+        if (conflict === "available") {
+          res.status(200).json({ code: "OK", message: "" });
+          break;
+        }
+        if (conflict === "google_only") {
+          res.status(409).json({
+            code: "EMAIL_REGISTERED_WITH_GOOGLE",
+            message: SIGNUP_GOOGLE_MESSAGE,
+          });
+          break;
+        }
+        res.status(409).json({
+          code: "EMAIL_ALREADY_REGISTERED",
+          message: SIGNUP_EMAIL_TAKEN_MESSAGE,
+        });
+        break;
+      }
+
       case "register": {
         requireMethod(req, "POST");
         checkRateLimit(`register:${ip}`, {
