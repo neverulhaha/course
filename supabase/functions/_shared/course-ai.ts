@@ -146,6 +146,64 @@ function hasText(value: unknown): boolean {
   return clean(value).length > 0;
 }
 
+type AiTrace = {
+  sessionId: string;
+  stepId: string;
+  stepType: string;
+};
+
+function traceFromBody(body: Rec): AiTrace | null {
+  const sessionId = clean(body.trace_session_id ?? body.traceSessionId);
+  const stepId = clean(body.trace_step_id ?? body.traceStepId);
+  const stepType = clean(body.trace_step_type ?? body.traceStepType);
+  if (!sessionId || !stepId) return null;
+  return { sessionId, stepId, stepType };
+}
+
+async function saveGenerationMessage(
+  db: SupabaseClient,
+  trace: AiTrace | null,
+  role: string,
+  content: unknown,
+  metadata: Rec = {},
+): Promise<void> {
+  if (!trace) return;
+  const payload = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+  const { error } = await db.from("generation_messages").insert({
+    session_id: trace.sessionId,
+    step_id: trace.stepId,
+    role,
+    content: payload,
+    metadata: { step_type: trace.stepType, ...metadata },
+  });
+  if (error) console.warn("generation message insert failed", error.message);
+}
+
+async function callAiWithTrace(
+  db: SupabaseClient,
+  trace: AiTrace | null,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<unknown> {
+  await saveGenerationMessage(db, trace, "prompt", {
+    model: AI_MODEL,
+    provider: AI_PROVIDER,
+    system: systemPrompt,
+    user: userPrompt,
+  });
+
+  try {
+    const parsed = await callAi(systemPrompt, userPrompt);
+    await saveGenerationMessage(db, trace, "ai_response", parsed, { model: AI_MODEL, provider: AI_PROVIDER });
+    return parsed;
+  } catch (error) {
+    await saveGenerationMessage(db, trace, "ai_error", {
+      message: error instanceof Error ? error.message : String(error),
+    }, { model: AI_MODEL, provider: AI_PROVIDER });
+    throw error;
+  }
+}
+
 function toDurationMinutes(value: unknown, fallback = 45): number {
   if (typeof value === "number" && Number.isFinite(value)) return Math.max(1, Math.round(value));
 
@@ -779,6 +837,7 @@ async function getCourseGraph(db: SupabaseClient, courseId: string): Promise<Rec
 
 async function generatePlan(req: Request, db: SupabaseClient, userId: string): Promise<Response> {
   const requestBody = await readJsonBody(req);
+  const trace = traceFromBody(requestBody);
   const courseId = clean(requestBody.course_id ?? requestBody.courseId);
   const force = Boolean(requestBody.force);
   if (!courseId) throw new AppError("INVALID_INPUT", "Не передан course_id", 400);
@@ -813,7 +872,7 @@ async function generatePlan(req: Request, db: SupabaseClient, userId: string): P
       source_text: source.enabled ? source.text : "Источник не используется.",
     });
 
-    const plan = validatePlanResponse(await callAi(buildSystemPrompt(course), prompt));
+    const plan = validatePlanResponse(await callAiWithTrace(db, trace, buildSystemPrompt(course), prompt));
 
     for (let moduleIndex = 0; moduleIndex < plan.modules.length; moduleIndex += 1) {
       const module = plan.modules[moduleIndex];
@@ -991,6 +1050,7 @@ async function generateLessonContentOnly(
   courseId: string,
   lessonId: string,
   sourceContext?: SourceBundle,
+  trace?: AiTrace | null,
 ): Promise<LessonContentResult> {
   const source = sourceContext ?? await loadSources(db, course);
   const { lesson, module, neighbors } = await getLessonContext(db, courseId, lessonId);
@@ -1026,7 +1086,7 @@ async function generateLessonContentOnly(
     source_text: source.enabled ? source.text : "Источник не используется.",
   });
 
-  const content = validateLessonContentResponse(await callAi(buildSystemPrompt(course), prompt));
+  const content = validateLessonContentResponse(await callAiWithTrace(db, trace ?? null, buildSystemPrompt(course), prompt));
   await upsertLessonContent(db, lessonId, content);
 
   const { error } = await db.from("lessons").update({ content_status: "generated" }).eq("id", lessonId);
@@ -1039,6 +1099,7 @@ async function generateLessonContentOnly(
 
 async function generateLesson(req: Request, db: SupabaseClient, userId: string): Promise<Response> {
   const requestBody = await readJsonBody(req);
+  const trace = traceFromBody(requestBody);
   const courseId = clean(requestBody.course_id ?? requestBody.courseId);
   const lessonId = clean(requestBody.lesson_id ?? requestBody.lessonId);
   if (!courseId || !lessonId) {
@@ -1057,7 +1118,7 @@ async function generateLesson(req: Request, db: SupabaseClient, userId: string):
   try {
     const course = await getOwnedCourse(db, courseId, userId);
     const source = await loadSources(db, course);
-    const content = await generateLessonContentOnly(db, course, courseId, lessonId, source);
+    const content = await generateLessonContentOnly(db, course, courseId, lessonId, source, trace);
     const courseStatus = await updateCourseStatusFromLessons(db, courseId);
     const versionId = await createCourseVersion(
       db,

@@ -46,7 +46,17 @@ async function errorMessage(error: unknown): Promise<string> {
 }
 
 async function invoke<T>(name: string, body: Record<string, unknown>): Promise<AiServiceResult<T>> {
-  const { data, error } = await supabase.functions.invoke<T | { error: unknown }>(name, { body });
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (!accessToken) {
+    return { data: null, error: "Войдите в аккаунт и повторите действие" };
+  }
+
+  const { data, error } = await supabase.functions.invoke<T | { error: unknown }>(name, {
+    body,
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 
   if (error) return { data: null, error: await errorMessage(error) };
 

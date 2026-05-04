@@ -79,6 +79,64 @@ function asString(value: unknown): string {
 function clean(value: unknown): string {
   return asString(value).trim();
 }
+
+type AiTrace = {
+  sessionId: string;
+  stepId: string;
+  stepType: string;
+};
+
+function traceFromBody(body: Rec): AiTrace | null {
+  const sessionId = clean(body.trace_session_id ?? body.traceSessionId);
+  const stepId = clean(body.trace_step_id ?? body.traceStepId);
+  const stepType = clean(body.trace_step_type ?? body.traceStepType);
+  if (!sessionId || !stepId) return null;
+  return { sessionId, stepId, stepType };
+}
+
+async function saveGenerationMessage(
+  db: SupabaseClient,
+  trace: AiTrace | null,
+  role: string,
+  content: unknown,
+  metadata: Rec = {},
+): Promise<void> {
+  if (!trace) return;
+  const payload = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+  const { error } = await db.from("generation_messages").insert({
+    session_id: trace.sessionId,
+    step_id: trace.stepId,
+    role,
+    content: payload,
+    metadata: { step_type: trace.stepType, ...metadata },
+  });
+  if (error) console.warn("generation message insert failed", error.message);
+}
+
+async function callAiWithTrace(
+  db: SupabaseClient,
+  trace: AiTrace | null,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<unknown> {
+  await saveGenerationMessage(db, trace, "prompt", {
+    model: AI_MODEL,
+    provider: AI_PROVIDER,
+    system: systemPrompt,
+    user: userPrompt,
+  });
+
+  try {
+    const parsed = await callAi(systemPrompt, userPrompt);
+    await saveGenerationMessage(db, trace, "ai_response", parsed, { model: AI_MODEL, provider: AI_PROVIDER });
+    return parsed;
+  } catch (error) {
+    await saveGenerationMessage(db, trace, "ai_error", {
+      message: error instanceof Error ? error.message : String(error),
+    }, { model: AI_MODEL, provider: AI_PROVIDER });
+    throw error;
+  }
+}
 function hasText(value: unknown): boolean {
   return clean(value).length > 0;
 }
@@ -388,6 +446,7 @@ async function replaceOldQuizzesIfSafe(db: SupabaseClient, opts: { courseId: str
 
 async function generateLessonQuiz(req: Request, db: SupabaseClient, userId: string): Promise<Response> {
   const body = await readJsonBody(req);
+  const trace = traceFromBody(body);
   const courseId = clean(body.course_id ?? body.courseId);
   const lessonId = clean(body.lesson_id ?? body.lessonId);
   const questionsCount = Math.min(20, toInt(body.questions_count ?? body.questionsCount, 5));
@@ -418,7 +477,7 @@ async function generateLessonQuiz(req: Request, db: SupabaseClient, userId: stri
       source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материала урока." : "Учитывай источник как контекст."}
 ${source.text}` : "Курс без источника.",
     ].join("\n\n");
-    const quiz = validateQuizResponse(await callAi(buildSystemPrompt(course), prompt), questionsCount);
+    const quiz = validateQuizResponse(await callAiWithTrace(db, trace, buildSystemPrompt(course), prompt), questionsCount);
     const quizId = await createQuizGraph(db, { courseId, lessonId, quiz });
     const versionId = await createCourseVersion(db, courseId, userId, "lesson_quiz_generated", `Сгенерирован квиз по уроку: ${clean(lesson.title)}`);
     await audit(db, { userId, courseId, action: "generate_lesson_quiz_completed", entityType: "quiz", entityId: quizId, metadata: { lesson_id: lessonId, quiz_id: quizId, questions_count: quiz.questions.length, version_id: versionId, warnings: [...source.warnings, ...quiz.warnings], ...sourceAuditMetadata(source) } });
@@ -431,6 +490,7 @@ ${source.text}` : "Курс без источника.",
 
 async function generateCourseQuiz(req: Request, db: SupabaseClient, userId: string): Promise<Response> {
   const body = await readJsonBody(req);
+  const trace = traceFromBody(body);
   const courseId = clean(body.course_id ?? body.courseId);
   const questionsCount = Math.min(30, toInt(body.questions_count ?? body.questionsCount, 10));
   const force = Boolean(body.force);
@@ -472,7 +532,7 @@ async function generateCourseQuiz(req: Request, db: SupabaseClient, userId: stri
       source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материалов курса." : "Учитывай источник как контекст."}
 ${source.text}` : "Курс без источника.",
     ].join("\n\n");
-    const quiz = validateQuizResponse(await callAi(buildSystemPrompt(course), prompt), questionsCount);
+    const quiz = validateQuizResponse(await callAiWithTrace(db, trace, buildSystemPrompt(course), prompt), questionsCount);
     const quizId = await createQuizGraph(db, { courseId, lessonId: null, quiz });
     const versionId = await createCourseVersion(db, courseId, userId, "course_quiz_generated", "Сгенерирован итоговый квиз курса");
     await audit(db, { userId, courseId, action: "generate_course_quiz_completed", entityType: "quiz", entityId: quizId, metadata: { quiz_id: quizId, questions_count: quiz.questions.length, version_id: versionId, warnings: [...source.warnings, ...quiz.warnings], ...sourceAuditMetadata(source) } });
