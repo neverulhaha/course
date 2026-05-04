@@ -417,9 +417,7 @@ async function generateLessonQuiz(req: Request, db: SupabaseClient, userId: stri
       `Модуль: ${clean(module.title)} — ${clean(module.description)}`,
       source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материала урока." : "Учитывай источник как контекст."}
 ${source.text}` : "Курс без источника.",
-    ].join("
-
-");
+    ].join("\n\n");
     const quiz = validateQuizResponse(await callAi(buildSystemPrompt(course), prompt), questionsCount);
     const quizId = await createQuizGraph(db, { courseId, lessonId, quiz });
     const versionId = await createCourseVersion(db, courseId, userId, "lesson_quiz_generated", `Сгенерирован квиз по уроку: ${clean(lesson.title)}`);
@@ -450,7 +448,7 @@ async function generateCourseQuiz(req: Request, db: SupabaseClient, userId: stri
     const { data: contents, error: cErr } = lessonIds.length ? await db.from("lesson_contents").select("*").in("lesson_id", lessonIds) : { data: [], error: null };
     if (cErr) throw new AppError("DATABASE_ERROR", "Не удалось загрузить содержание курса", 500, { error: cErr.message });
     if (!contents || contents.length === 0) throw new AppError("COURSE_CONTENT_NOT_READY", "Для итогового квиза нужно сначала сгенерировать содержание уроков", 400);
-    const contentByLesson = new Map((contents ?? []).map((c) => [clean(asRecord(c)?.lesson_id), asRecord(c) ?? {}]));
+    const contentByLesson = new Map<string, Rec>((contents ?? []).map((c) => [clean(asRecord(c)?.lesson_id), asRecord(c) ?? {}]));
     const courseMaterial = (lessons ?? []).map((l) => {
       const lr = asRecord(l) ?? {};
       const content = contentByLesson.get(clean(lr.id));
@@ -473,9 +471,7 @@ async function generateCourseQuiz(req: Request, db: SupabaseClient, userId: stri
       JSON.stringify({ title: "string", description: "string", warnings: ["string"], questions: [{ question_text: "string", question_type: "single_choice", explanation: "string", options: [{ answer_text: "string", is_correct: true }, { answer_text: "string", is_correct: false }, { answer_text: "string", is_correct: false }, { answer_text: "string", is_correct: false }] }] }),
       source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материалов курса." : "Учитывай источник как контекст."}
 ${source.text}` : "Курс без источника.",
-    ].join("
-
-");
+    ].join("\n\n");
     const quiz = validateQuizResponse(await callAi(buildSystemPrompt(course), prompt), questionsCount);
     const quizId = await createQuizGraph(db, { courseId, lessonId: null, quiz });
     const versionId = await createCourseVersion(db, courseId, userId, "course_quiz_generated", "Сгенерирован итоговый квиз курса");
@@ -593,7 +589,7 @@ async function recalculateProgressInternal(db: SupabaseClient, courseId: string,
   const existingId = clean(asRecord(existing)?.id);
   const result = existingId ? await db.from("progress").update(payload).eq("id", existingId).select("*").maybeSingle() : await db.from("progress").insert(payload).select("*").maybeSingle();
   if (result.error) throw new AppError("DATABASE_ERROR", "Не удалось сохранить прогресс", 500, { error: result.error.message });
-  const progress = asRecord(result.data) ?? payload;
+  const progress = (asRecord(result.data) ?? payload) as Rec;
   await audit(db, { userId, courseId, action: "progress_recalculated", entityType: "progress", entityId: clean(progress.id) || undefined, metadata: { completion_percent: percent, completed_lessons_count: completed, total_lessons_count: total, next_recommended_lesson_id: nextRecommended } });
   return progress;
 }
