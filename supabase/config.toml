@@ -1,0 +1,7 @@
+# Local Supabase CLI configuration for Edge Functions.
+# restore-course-version validates the user token manually inside the function.
+# JWT verification at the Supabase gateway must be disabled for this function,
+# otherwise browser CORS preflight OPTIONS can fail with UNAUTHORIZED_NO_AUTH_HEADER.
+
+[functions.restore-course-version]
+verify_jwt = false

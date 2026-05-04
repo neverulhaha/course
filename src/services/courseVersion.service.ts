@@ -415,7 +415,7 @@ async function parseEdgeFunctionError(error: unknown): Promise<Error> {
   const code = str(payload?.code);
   const message = str(payload?.message) ?? str(errorRecord?.message);
   if (code === "UNAUTHORIZED_NO_AUTH_HEADER") {
-    return new Error("Сессия не передалась в функцию отката. Обновите страницу, войдите заново и повторите действие.");
+    return new Error("Функция отката развёрнута с обязательной JWT-проверкой на gateway. Передеплойте restore-course-version с --no-verify-jwt или через supabase/config.toml, потому что авторизация уже проверяется внутри функции.");
   }
   if (message && code) return new Error(`${message} (${code})`);
   return new Error(message ?? "Не удалось выполнить запрос");
@@ -507,7 +507,8 @@ export async function restoreCourseVersion(courseId: string, versionId: string):
   });
 
   const payload = await response.json().catch(() => ({}));
-  const backendError = asRecord(payload)?.error;
+  const payloadRecord = asRecord(payload);
+  const backendError = asRecord(payloadRecord?.error) ?? (str(payloadRecord?.code) ? payloadRecord : null);
   if (!response.ok || backendError) {
     throw await parseEdgeFunctionError({ error: backendError ?? { message: response.statusText } });
   }

@@ -7,7 +7,8 @@
     "build": "vite build",
     "dev": "vite",
     "supabase:link": "npx supabase link --project-ref aabrasccxeawzlqxwkjt",
-    "deploy:functions": "npx supabase functions deploy --project-ref aabrasccxeawzlqxwkjt"
+    "deploy:functions": "npx supabase functions deploy --project-ref aabrasccxeawzlqxwkjt",
+    "deploy:restore-version": "npx supabase functions deploy restore-course-version --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
