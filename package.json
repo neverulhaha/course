@@ -8,7 +8,9 @@
     "dev": "vite",
     "supabase:link": "npx supabase link --project-ref aabrasccxeawzlqxwkjt",
     "deploy:functions": "npx supabase functions deploy --project-ref aabrasccxeawzlqxwkjt",
-    "deploy:restore-version": "npx supabase functions deploy restore-course-version --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt"
+    "deploy:restore-version": "npx supabase functions deploy restore-course-version --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt",
+    "db:push": "npx supabase db push",
+    "deploy:security-functions": "sh -c 'for fn in delete-course run-course-qa complete-lesson submit-assignment submit-quiz-attempt get-quiz-for-taking recalculate-progress generate-course generate-course-plan generate-course-content generate-lesson-content regenerate-lesson-block generate-lesson-quiz generate-course-quiz start-generation-session process-generation-step get-generation-session-status cancel-generation-session; do npx supabase functions deploy \"$fn\" --project-ref aabrasccxeawzlqxwkjt || exit 1; done; npx supabase functions deploy restore-course-version --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt'"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

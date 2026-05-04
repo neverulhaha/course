@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { toUserErrorMessage } from "@/lib/errorMessages";
+import { getCourseAccessStatus } from "@/services/accessControl.service";
 
 export type CourseProgress = {
   id?: string;
@@ -53,6 +54,16 @@ function str(value: unknown): string | null {
 function num(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+
+async function ensureCourseAccess(courseId: string): Promise<string | null> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status === "ok") return null;
+  if (access.status === "unauthorized") return "Войдите в систему.";
+  if (access.status === "forbidden") return "У вас нет доступа к этому разделу.";
+  if (access.status === "not_found") return "Курс не найден.";
+  return access.error ?? "Не удалось проверить доступ к курсу.";
 }
 
 function messageFromBackend(value: unknown): string | null {
@@ -203,6 +214,8 @@ export const submitAssignment = (courseId: string, lessonId: string, submissionT
 export async function recalculateProgress(courseId: string, lastOpenedLessonId?: string | null): Promise<InvokeResult<{ progress: CourseProgress }>> {
   const userId = await currentUserId();
   if (!userId) return { data: null, error: "Нужно войти в систему" };
+  const accessError = await ensureCourseAccess(courseId);
+  if (accessError) return { data: null, error: accessError };
   const result = await invoke<{ progress: unknown }>("recalculate-progress", { course_id: courseId, last_opened_lesson_id: lastOpenedLessonId ?? null });
   if (result.error) return { data: null, error: result.error };
   return { data: { progress: mapProgress(result.data?.progress, userId, courseId) }, error: null };
@@ -211,6 +224,8 @@ export async function recalculateProgress(courseId: string, lastOpenedLessonId?:
 export async function getCourseProgress(courseId: string): Promise<InvokeResult<{ progress: CourseProgress }>> {
   const userId = await currentUserId();
   if (!userId) return { data: null, error: "Нужно войти в систему" };
+  const accessError = await ensureCourseAccess(courseId);
+  if (accessError) return { data: null, error: accessError };
   const stored = await getStoredProgress(courseId, userId).catch(() => null);
   if (stored) return { data: { progress: stored }, error: null };
   try {
@@ -230,6 +245,8 @@ export async function getNextRecommendedLesson(courseId: string): Promise<Invoke
 export async function getCourseLearningStats(courseId: string): Promise<InvokeResult<CourseLearningStats>> {
   const userId = await currentUserId();
   if (!userId) return { data: null, error: "Нужно войти в систему" };
+  const accessError = await ensureCourseAccess(courseId);
+  if (accessError) return { data: null, error: accessError };
 
   try {
     const lessons = await getOrderedCourseLessons(courseId);

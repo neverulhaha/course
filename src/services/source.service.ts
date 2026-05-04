@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
+import { toUserErrorMessage } from "@/lib/errorMessages";
+import { getCourseAccessStatus } from "@/services/accessControl.service";
 
 export interface CourseSourceRow {
   id: string;
@@ -11,8 +13,17 @@ export interface CourseSourceRow {
   created_at: string;
 }
 
-function readableError(error: { message?: string } | null | undefined, fallback: string): Error {
-  return new Error(error?.message || fallback);
+function readableError(error: unknown, fallback: string): Error {
+  return new Error(toUserErrorMessage(error, fallback));
+}
+
+async function ensureCourseAccess(courseId: string): Promise<Error | null> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status === "ok") return null;
+  if (access.status === "unauthorized") return new Error("Войдите в систему.");
+  if (access.status === "forbidden") return new Error("У вас нет доступа к этому разделу.");
+  if (access.status === "not_found") return new Error("Курс не найден.");
+  return new Error(access.error ?? "Не удалось проверить доступ к курсу.");
 }
 
 export async function createTextSource(
@@ -20,6 +31,8 @@ export async function createTextSource(
   rawText: string,
   onlySourceMode: boolean,
 ): Promise<{ source: CourseSourceRow | null; error: Error | null }> {
+  const accessError = await ensureCourseAccess(courseId);
+  if (accessError) return { source: null, error: accessError };
   const text = rawText.trim();
   const { data, error } = await supabase
     .from("sources")
@@ -39,6 +52,8 @@ export async function createTextSource(
 }
 
 export async function getCourseSources(courseId: string): Promise<{ sources: CourseSourceRow[]; error: Error | null }> {
+  const accessError = await ensureCourseAccess(courseId);
+  if (accessError) return { sources: [], error: accessError };
   const { data, error } = await supabase
     .from("sources")
     .select("*")

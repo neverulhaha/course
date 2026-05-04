@@ -14,6 +14,8 @@ import {
   type CourseVersionListItem,
 } from "@/services/courseVersion.service";
 import { toUserErrorMessage } from "@/lib/errorMessages";
+import Forbidden from "@/app/pages/Forbidden";
+import NotFound from "@/app/pages/NotFound";
 
 const RESTORE_CONFIRMATION_TEXT = "Откат восстановит структуру и содержание курса из выбранной версии. История прохождения и попытки квизов не будут удалены.";
 
@@ -70,9 +72,14 @@ export default function VersionHistoryPage() {
       setVersions(nextVersions);
       setSelected((current) => current && nextVersions.some((version) => version.id === current.id) ? current : null);
     } catch (caught) {
-      const message = toUserErrorMessage(caught, "Не удалось загрузить версии курса. Попробуйте ещё раз.");
-      setError(message);
-      toast.error(message);
+      const raw = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "";
+      if (raw === "forbidden" || raw === "not_found") {
+        setError(raw);
+      } else {
+        const message = toUserErrorMessage(caught, "Не удалось загрузить версии курса. Попробуйте ещё раз.");
+        setError(message);
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -90,9 +97,14 @@ export default function VersionHistoryPage() {
       const version = await getCourseVersion(courseId, versionId);
       setSelected(version);
     } catch (caught) {
-      const message = toUserErrorMessage(caught, "Не удалось открыть версию. Попробуйте ещё раз.");
-      setError(message);
-      toast.error(message);
+      const raw = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "";
+      if (raw === "forbidden" || raw === "not_found") {
+        setError(raw);
+      } else {
+        const message = toUserErrorMessage(caught, "Не удалось открыть версию. Попробуйте ещё раз.");
+        setError(message);
+        toast.error(message);
+      }
     } finally {
       setDetailsLoadingId(null);
     }
@@ -114,9 +126,14 @@ export default function VersionHistoryPage() {
       }
       setRestoreTarget(version);
     } catch (caught) {
-      const message = toUserErrorMessage(caught, "Не удалось подготовить восстановление версии. Попробуйте ещё раз.");
-      setError(message);
-      toast.error(message);
+      const raw = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "";
+      if (raw === "forbidden" || raw === "not_found") {
+        setError(raw);
+      } else {
+        const message = toUserErrorMessage(caught, "Не удалось подготовить восстановление версии. Попробуйте ещё раз.");
+        setError(message);
+        toast.error(message);
+      }
     } finally {
       setDetailsLoadingId(null);
     }
@@ -135,13 +152,21 @@ export default function VersionHistoryPage() {
       setRestoreTarget(null);
       toast.success(`Версия №${target.version_number} восстановлена. Создана новая версия отката.`);
     } catch (caught) {
-      const message = toUserErrorMessage(caught, "Не удалось восстановить версию. Попробуйте ещё раз.");
-      setError(message);
-      toast.error(message);
+      const raw = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "";
+      if (raw === "forbidden" || raw === "not_found") {
+        setError(raw);
+      } else {
+        const message = toUserErrorMessage(caught, "Не удалось восстановить версию. Попробуйте ещё раз.");
+        setError(message);
+        toast.error(message);
+      }
     } finally {
       setRestoringId(null);
     }
   }
+
+  if (error === "forbidden") return <Forbidden />;
+  if (error === "not_found") return <NotFound />;
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">

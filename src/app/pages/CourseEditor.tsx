@@ -31,6 +31,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/app/components/ui/utils";
 import { toast } from "sonner";
 import { toUserErrorMessage } from "@/lib/errorMessages";
+import Forbidden from "@/app/pages/Forbidden";
+import NotFound from "@/app/pages/NotFound";
 
 const FONT = "'Montserrat', sans-serif";
 
@@ -606,16 +608,8 @@ export default function CourseEditor() {
     );
   }
 
-  if (loadError === "forbidden" || loadError === "not_found") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[var(--bg-page)] px-6 text-center" style={{ fontFamily: FONT }}>
-        <p className="text-sm text-[var(--gray-700)]">Курс не найден или нет доступа.</p>
-        <button type="button" className="text-sm font-semibold text-[var(--brand-blue)]" onClick={() => navigate("/app")}>
-          К списку курсов
-        </button>
-      </div>
-    );
-  }
+  if (loadError === "forbidden") return <Forbidden />;
+  if (loadError === "not_found") return <NotFound />;
 
   if (loadError || !selectedLesson) {
     return (

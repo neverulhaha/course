@@ -154,9 +154,15 @@ function env(name: string): string {
 function serviceClient(): SupabaseClient {
   return createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
 }
+function extractBearerAuthorization(req: Request): string {
+  const raw = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  const first = raw.split(",").map((part) => part.trim()).find((part) => part.toLowerCase().startsWith("bearer ")) ?? "";
+  if (!first) throw new AppError("UNAUTHORIZED", "Нужно войти в систему", 401);
+  return first;
+}
+
 async function getUserId(req: Request): Promise<string> {
-  const authorization = req.headers.get("Authorization") ?? "";
-  if (!authorization.toLowerCase().startsWith("bearer ")) throw new AppError("UNAUTHORIZED", "Нужно войти в систему", 401);
+  const authorization = extractBearerAuthorization(req);
   const authClient = createClient(env("SUPABASE_URL"), env("SUPABASE_ANON_KEY"), {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },

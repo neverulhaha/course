@@ -172,3 +172,5 @@ export interface CourseListRow {
   created_at?: string;
   updated_at?: string;
 }
+
+export type AccessStatusRow = "ok" | "forbidden" | "not_found" | "unauthorized" | "error";

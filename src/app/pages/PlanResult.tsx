@@ -8,6 +8,8 @@ import { fetchCoursePlanStructure, syncCourseStatusFromContent } from "@/service
 import { runCourseGenerationSession } from "@/services/aiGeneration.service";
 import { toast } from "sonner";
 import { toUserErrorMessage } from "@/lib/errorMessages";
+import Forbidden from "@/app/pages/Forbidden";
+import NotFound from "@/app/pages/NotFound";
 
 export default function PlanResult() {
   const { courseId } = useParams();
@@ -122,16 +124,8 @@ export default function PlanResult() {
     );
   }
 
-  if (loadError === "forbidden" || loadError === "not_found") {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-[#F9FAFB] to-white flex flex-col items-center justify-center gap-3 px-6">
-        <p className="text-sm text-gray-700">Курс не найден или нет доступа.</p>
-        <Link to="/app" className="text-sm font-semibold text-[#4A90E2]">
-          К списку курсов
-        </Link>
-      </div>
-    );
-  }
+  if (loadError === "forbidden") return <Forbidden />;
+  if (loadError === "not_found") return <NotFound />;
 
   if (loadError || modules.length === 0) {
     return (

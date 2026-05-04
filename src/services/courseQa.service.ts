@@ -6,6 +6,7 @@ import type { QaCategoryView, QaIssueView } from "@/entities/course/readModels";
 import { formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
 import { toCourseVersionChangeLabel } from "@/services/courseVersion.service";
+import { getCourseAccessStatus, getVersionAccessStatus } from "@/services/accessControl.service";
 import { toUserErrorMessage } from "@/lib/errorMessages";
 
 export type { QaCategoryView, QaIssueView };
@@ -311,6 +312,9 @@ function normalizeQaReport(row: unknown): QaReport {
 }
 
 export async function runCourseQa(courseId: string, versionId?: string | null): Promise<QaReport> {
+  const access = versionId ? await getVersionAccessStatus(versionId, courseId) : await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") throw new Error(access.status === "error" ? access.error ?? "Не удалось проверить доступ к QA." : access.status);
+
   const { data, error } = await supabase.functions.invoke("run-course-qa", {
     body: { course_id: courseId, version_id: versionId ?? undefined },
   });
@@ -322,6 +326,9 @@ export async function runCourseQa(courseId: string, versionId?: string | null): 
 }
 
 export async function getLatestQaReport(courseId: string): Promise<QaReport | null> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") throw new Error(access.status === "error" ? access.error ?? "Не удалось загрузить QA-отчёт." : access.status);
+
   const { data, error } = await supabase
     .from("qa_reports")
     .select("*")
@@ -335,6 +342,9 @@ export async function getLatestQaReport(courseId: string): Promise<QaReport | nu
 }
 
 export async function getQaHistory(courseId: string): Promise<QaReport[]> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") throw new Error(access.status === "error" ? access.error ?? "Не удалось загрузить историю QA." : access.status);
+
   const { data, error } = await supabase
     .from("qa_reports")
     .select("*")
@@ -347,6 +357,9 @@ export async function getQaHistory(courseId: string): Promise<QaReport[]> {
 
 export async function getQaVersionSummary(courseId: string, versionId: string | null | undefined): Promise<QaVersionSummary | null> {
   if (!courseId || !versionId) return null;
+  const versionAccess = await getVersionAccessStatus(versionId, courseId);
+  if (versionAccess.status !== "ok") throw new Error(versionAccess.status === "error" ? versionAccess.error ?? "Не удалось загрузить связанную версию." : versionAccess.status);
+
   const { data, error } = await supabase
     .from("course_versions")
     .select("id, version_number, change_type, change_description, created_at")

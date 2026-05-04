@@ -21,3 +21,5 @@ export * from "./coursePlayback.service";
 
 export { formatRuDate, formatRuDateTime } from "@/lib/dateFormat";
 export { parseLessonContentJson, emptyLessonContent } from "@/entities/course/lessonContentJson";
+
+export * from "./accessControl.service";

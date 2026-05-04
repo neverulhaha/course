@@ -15,6 +15,7 @@ import { formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
 import { fetchCourseContentMetrics } from "@/services/courseQuery.service";
 import { createCourseVersionSnapshot, ensureFirstCourseVersionIfNeeded } from "@/services/courseVersion.service";
+import { getCourseAccessStatus, getLessonAccessStatus, getModuleAccessStatus } from "@/services/accessControl.service";
 
 export type { CourseEditorBundle };
 
@@ -82,12 +83,16 @@ function userError(message: string): string {
   return toUserErrorMessage(message, "Не удалось сохранить данные. Попробуйте ещё раз.");
 }
 
-async function verifyCourseOwner(courseId: string, userId: string): Promise<{ ok: boolean; error: string | null }> {
-  const { data, error } = await supabase.from("courses").select("author_id").eq("id", courseId).maybeSingle();
-  if (error) return { ok: false, error: userError(error.message) };
-  const row = asRecord(data);
-  if (!row) return { ok: false, error: "Курс не найден." };
-  if (str(row.author_id) !== userId) return { ok: false, error: "Нет доступа к этому курсу." };
+function accessError(status: string, fallback = "Не удалось проверить доступ."): string {
+  if (status === "unauthorized") return "Войдите в систему.";
+  if (status === "forbidden") return "У вас нет доступа к этому разделу.";
+  if (status === "not_found") return "Данные не найдены.";
+  return fallback;
+}
+
+async function verifyCourseOwner(courseId: string, _userId: string): Promise<{ ok: boolean; error: string | null }> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") return { ok: false, error: access.error ?? accessError(access.status, "Не удалось проверить доступ к курсу.") };
   return { ok: true, error: null };
 }
 
@@ -201,6 +206,9 @@ export async function fetchCourseEditorBundle(
   courseId: string,
   userId: string
 ): Promise<{ bundle: CourseEditorBundle | null; error: string | null }> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") return { bundle: null, error: access.status === "error" ? access.error ?? "error" : access.status };
+
   const { data: course, error: cErr } = await supabase
     .from("courses")
     .select("id, author_id, title, topic, level, goal, duration, format, language, tone, updated_at, current_version_id, generation_mode, source_mode")
@@ -416,10 +424,10 @@ export async function updateModule(
   userId: string,
   patch: ModulePatch
 ): Promise<EditorActionResult> {
+  const moduleAccess = await getModuleAccessStatus(moduleId);
+  if (moduleAccess.status !== "ok") return { data: null, error: moduleAccess.error ?? accessError(moduleAccess.status, "Не удалось проверить доступ к модулю.") };
   const courseId = await getCourseIdByModule(moduleId);
   if (!courseId) return { data: null, error: "Модуль не найден." };
-  const owner = await verifyCourseOwner(courseId, userId);
-  if (!owner.ok) return { data: null, error: owner.error };
 
   const clean = cleanPatch(patch);
   if (Object.keys(clean).length === 0) return { data: null, error: "Нет изменений для сохранения." };
@@ -452,10 +460,10 @@ export async function updateLesson(
   userId: string,
   patch: LessonPatch
 ): Promise<EditorActionResult> {
+  const lessonAccess = await getLessonAccessStatus(lessonId);
+  if (lessonAccess.status !== "ok") return { data: null, error: lessonAccess.error ?? accessError(lessonAccess.status, "Не удалось проверить доступ к уроку.") };
   const rel = await getModuleAndCourseByLesson(lessonId);
   if (!rel.courseId) return { data: null, error: "Урок не найден." };
-  const owner = await verifyCourseOwner(rel.courseId, userId);
-  if (!owner.ok) return { data: null, error: owner.error };
 
   const clean = cleanPatch(patch);
   if (Object.keys(clean).length === 0) return { data: null, error: "Нет изменений для сохранения." };
@@ -488,10 +496,10 @@ export async function updateLessonContent(
   userId: string,
   patch: LessonContentPatch
 ): Promise<EditorActionResult> {
+  const lessonAccess = await getLessonAccessStatus(lessonId);
+  if (lessonAccess.status !== "ok") return { data: null, error: lessonAccess.error ?? accessError(lessonAccess.status, "Не удалось проверить доступ к материалам урока.") };
   const rel = await getModuleAndCourseByLesson(lessonId);
   if (!rel.courseId) return { data: null, error: "Урок не найден." };
-  const owner = await verifyCourseOwner(rel.courseId, userId);
-  if (!owner.ok) return { data: null, error: owner.error };
 
   const clean = cleanPatch(patch);
   const hasAnyContent = Object.values(clean).some((v) => textLen(v) > 0);
@@ -606,10 +614,10 @@ export async function createLesson(
   userId: string,
   data: { title?: string; objective?: string | null; summary?: string | null; estimated_duration?: number | null; learning_outcome?: string | null } = {}
 ): Promise<EditorActionResult<{ id: string }>> {
+  const moduleAccess = await getModuleAccessStatus(moduleId);
+  if (moduleAccess.status !== "ok") return { data: null, error: moduleAccess.error ?? accessError(moduleAccess.status, "Не удалось проверить доступ к модулю.") };
   const courseId = await getCourseIdByModule(moduleId);
   if (!courseId) return { data: null, error: "Модуль не найден." };
-  const owner = await verifyCourseOwner(courseId, userId);
-  if (!owner.ok) return { data: null, error: owner.error };
 
   const { data: rows } = await supabase
     .from("lessons")
@@ -653,10 +661,10 @@ export async function createLesson(
 }
 
 export async function deleteLesson(lessonId: string, userId: string): Promise<EditorActionResult> {
+  const lessonAccess = await getLessonAccessStatus(lessonId);
+  if (lessonAccess.status !== "ok") return { data: null, error: lessonAccess.error ?? accessError(lessonAccess.status, "Не удалось проверить доступ к уроку.") };
   const rel = await getModuleAndCourseByLesson(lessonId);
   if (!rel.courseId || !rel.moduleId) return { data: null, error: "Урок не найден." };
-  const owner = await verifyCourseOwner(rel.courseId, userId);
-  if (!owner.ok) return { data: null, error: owner.error };
 
   const { error } = await supabase.from("lessons").delete().eq("id", lessonId);
   if (error) return { data: null, error: userError(error.message) };
@@ -678,10 +686,10 @@ export async function deleteLesson(lessonId: string, userId: string): Promise<Ed
 }
 
 export async function deleteModule(moduleId: string, userId: string): Promise<EditorActionResult> {
+  const moduleAccess = await getModuleAccessStatus(moduleId);
+  if (moduleAccess.status !== "ok") return { data: null, error: moduleAccess.error ?? accessError(moduleAccess.status, "Не удалось проверить доступ к модулю.") };
   const courseId = await getCourseIdByModule(moduleId);
   if (!courseId) return { data: null, error: "Модуль не найден." };
-  const owner = await verifyCourseOwner(courseId, userId);
-  if (!owner.ok) return { data: null, error: owner.error };
 
   const { error } = await supabase.from("modules").delete().eq("id", moduleId);
   if (error) return { data: null, error: userError(error.message) };
@@ -763,12 +771,12 @@ export async function reorderLessons(
   orderedLessonIds: string[],
   createVersion = true
 ): Promise<EditorActionResult> {
+  if (userId) {
+    const moduleAccess = await getModuleAccessStatus(moduleId);
+    if (moduleAccess.status !== "ok") return { data: null, error: moduleAccess.error ?? accessError(moduleAccess.status, "Не удалось проверить доступ к модулю.") };
+  }
   const courseId = await getCourseIdByModule(moduleId);
   if (!courseId) return { data: null, error: "Модуль не найден." };
-  if (userId) {
-    const owner = await verifyCourseOwner(courseId, userId);
-    if (!owner.ok) return { data: null, error: owner.error };
-  }
 
   for (let i = 0; i < orderedLessonIds.length; i += 1) {
     const { error } = await supabase.from("lessons").update({ position: 10000 + i }).eq("id", orderedLessonIds[i]).eq("module_id", moduleId);
@@ -799,6 +807,9 @@ export async function fetchCoursePlanStructure(
   courseId: string,
   userId: string
 ): Promise<{ title: string; level: string; duration: string; goal: string; modules: PlanModuleRow[]; error: string | null }> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") return { title: "", level: "—", duration: "—", goal: "—", modules: [], error: access.status === "error" ? access.error ?? "error" : access.status };
+
   const { data: course, error: cErr } = await supabase
     .from("courses")
     .select("id, title, author_id, level, duration, goal")
@@ -854,6 +865,11 @@ export async function fetchLessonHeader(
   lessonId: string,
   userId: string
 ): Promise<{ lessonTitle: string; goal: string; theoryText: string; error: string | null }> {
+  const courseAccess = await getCourseAccessStatus(courseId);
+  if (courseAccess.status !== "ok") return { lessonTitle: "", goal: "", theoryText: "", error: courseAccess.status === "error" ? courseAccess.error ?? "error" : courseAccess.status };
+  const lessonAccess = await getLessonAccessStatus(lessonId, courseId);
+  if (lessonAccess.status !== "ok") return { lessonTitle: "", goal: "", theoryText: "", error: lessonAccess.status === "error" ? lessonAccess.error ?? "error" : lessonAccess.status };
+
   const { data: les } = await supabase.from("lessons").select("id, title, module_id, objective").eq("id", lessonId).maybeSingle();
   const lr = asRecord(les);
   if (!lr) return { lessonTitle: "", goal: "", theoryText: "", error: "not_found" };

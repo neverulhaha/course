@@ -13,6 +13,7 @@ import {
 import { formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
 import { toUserErrorMessage } from "@/lib/errorMessages";
+import { getCourseAccessStatus, getVersionAccessStatus } from "@/services/accessControl.service";
 
 export type VersionRowView = VersionListItem;
 export type VersionChangeType = VersionChangeTypeUi;
@@ -169,16 +170,8 @@ export async function createCourseVersionSnapshot(
   changeType: string,
   changeDescription: string
 ): Promise<{ versionId: string | null; error: Error | null }> {
-  const { data: course, error: cErr } = await supabase
-    .from("courses")
-    .select("author_id")
-    .eq("id", courseId)
-    .maybeSingle();
-
-  if (cErr) return { versionId: null, error: cErr };
-  const crow = asRecord(course);
-  if (!crow) return { versionId: null, error: new Error("not_found") };
-  if (str(crow.author_id) !== authorId) return { versionId: null, error: new Error("forbidden") };
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") return { versionId: null, error: new Error(access.status === "error" ? access.error ?? "error" : access.status) };
 
   const { data: lastRows, error: lastErr } = await supabase
     .from("course_versions")
@@ -266,6 +259,9 @@ export async function fetchCourseVersions(courseId: string): Promise<{
   versions: VersionListItem[];
   error: string | null;
 }> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") return { courseTitle: null, versions: [], error: access.status === "error" ? access.error ?? "Не удалось загрузить версии." : access.status };
+
   const { data: course } = await supabase.from("courses").select("title, current_version_id").eq("id", courseId).maybeSingle();
   const courseRec = asRecord(course);
   const courseTitle = courseRec ? str(courseRec.title) : null;
@@ -437,6 +433,9 @@ function mapCourseVersionRow(row: unknown, courseId: string, currentVersionId: s
 }
 
 export async function getCourseVersions(courseId: string): Promise<CourseVersionListItem[]> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") throw new Error(access.status === "error" ? access.error ?? "Не удалось загрузить версии. Попробуйте ещё раз." : access.status);
+
   const { data: course, error: courseError } = await supabase
     .from("courses")
     .select("current_version_id")
@@ -458,6 +457,9 @@ export async function getCourseVersions(courseId: string): Promise<CourseVersion
 }
 
 export async function getCourseVersion(courseId: string, versionId: string): Promise<CourseVersionDetails> {
+  const versionAccess = await getVersionAccessStatus(versionId, courseId);
+  if (versionAccess.status !== "ok") throw new Error(versionAccess.status === "error" ? versionAccess.error ?? "Не удалось загрузить версию. Попробуйте ещё раз." : versionAccess.status);
+
   const { data: course, error: courseError } = await supabase
     .from("courses")
     .select("current_version_id")
@@ -484,6 +486,9 @@ export async function getCourseVersion(courseId: string, versionId: string): Pro
 }
 
 export async function restoreCourseVersion(courseId: string, versionId: string): Promise<RestoreCourseVersionResult> {
+  const versionAccess = await getVersionAccessStatus(versionId, courseId);
+  if (versionAccess.status !== "ok") throw new Error(versionAccess.status === "error" ? versionAccess.error ?? "Не удалось проверить доступ к версии." : versionAccess.status);
+
   let { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session?.access_token) {
     const refreshed = await supabase.auth.refreshSession();

@@ -74,10 +74,16 @@ export async function readJson(req: Request): Promise<Rec> {
   }
 }
 
-export async function getAuthUser(req: Request, db: SupabaseClient): Promise<{ id: string }> {
-  const auth = req.headers.get("Authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
+export function extractBearerToken(req: Request): string {
+  const raw = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  const first = raw.split(",").map((part) => part.trim()).find((part) => part.toLowerCase().startsWith("bearer ")) ?? "";
+  const token = first.replace(/^Bearer\s+/i, "").trim();
   if (!token) throw new AppError("UNAUTHORIZED", "Нужно войти в систему", 401);
+  return token;
+}
+
+export async function getAuthUser(req: Request, db: SupabaseClient): Promise<{ id: string }> {
+  const token = extractBearerToken(req);
   const { data, error } = await db.auth.getUser(token);
   if (error || !data?.user) throw new AppError("UNAUTHORIZED", "Сессия недействительна", 401);
   return { id: data.user.id };
@@ -328,7 +334,7 @@ export function debugErrorPayload(error: unknown): Rec {
 
 export async function invokeFunction(req: Request, functionName: string, body: Rec): Promise<Rec> {
   const baseUrl = env("SUPABASE_URL").replace(/\/+$/, "");
-  const authorization = req.headers.get("Authorization") ?? "";
+  const authorization = `Bearer ${extractBearerToken(req)}`;
   const response = await fetch(`${baseUrl}/functions/v1/${functionName}`, {
     method: "POST",
     headers: {

@@ -23,6 +23,7 @@ const CoursePlayer    = lazy(() => import("./pages/CoursePlayer"));
 const QuizTaking      = lazy(() => import("./pages/QuizTaking"));
 const NotFound        = lazy(() => import("./pages/NotFound"));
 const Forbidden       = lazy(() => import("./pages/Forbidden"));
+const LoadError       = lazy(() => import("./pages/LoadError"));
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<SuspenseFallback />}>{children}</Suspense>;
@@ -63,5 +64,6 @@ export const router = createBrowserRouter([
   { path: "/learn/:courseId/lesson/:lessonId", element: <ProtectedLazy><CoursePlayer /></ProtectedLazy> },
   { path: "/learn/:courseId/quiz/:quizId", element: <ProtectedLazy><QuizTaking /></ProtectedLazy> },
   { path: "/forbidden", element: <Lazy><Forbidden /></Lazy> },
+  { path: "/load-error", element: <Lazy><LoadError /></Lazy> },
   { path: "*", element: <Lazy><NotFound /></Lazy> },
 ]);

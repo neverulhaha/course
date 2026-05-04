@@ -25,6 +25,16 @@ Deno.serve(async (req) => {
     courseId = asUuid(body?.course_id, "course_id");
     const versionId = body?.version_id ? asUuid(body.version_id, "version_id") : null;
     const course = await loadOwnedCourse(supabaseAdmin, courseId, user.id);
+    if (versionId) {
+      const { data: version, error: versionError } = await supabaseAdmin
+        .from("course_versions")
+        .select("id")
+        .eq("id", versionId)
+        .eq("course_id", courseId)
+        .maybeSingle();
+      if (versionError) throw new AppError("DATABASE_ERROR", "Не удалось проверить версию курса", 500, { message: versionError.message });
+      if (!version) throw new AppError("VERSION_NOT_FOUND", "Версия не найдена", 404);
+    }
 
     await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_started", entityType: "course", entityId: courseId, metadata: { version_id: versionId } });
 

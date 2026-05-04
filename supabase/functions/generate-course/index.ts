@@ -76,9 +76,15 @@ async function readJsonBody(req: Request): Promise<Rec> {
     throw new AppError("INVALID_INPUT", "Некорректный запрос", 400, { message: error instanceof Error ? error.message : String(error) });
   }
 }
+function extractBearerAuthorization(req: Request): string {
+  const raw = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  const first = raw.split(",").map((part) => part.trim()).find((part) => part.toLowerCase().startsWith("bearer ")) ?? "";
+  if (!first) throw new AppError("UNAUTHORIZED", "Нужно войти в систему", 401);
+  return first;
+}
+
 async function getUserId(req: Request): Promise<string> {
-  const authorization = req.headers.get("Authorization") ?? "";
-  if (!authorization.toLowerCase().startsWith("bearer ")) throw new AppError("UNAUTHORIZED", "Нужно войти в систему", 401);
+  const authorization = extractBearerAuthorization(req);
   const authClient = createClient(env("SUPABASE_URL"), env("SUPABASE_ANON_KEY"), {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
@@ -119,7 +125,7 @@ function normalizeDepth(value: unknown, fallback: unknown): GenerationDepth {
 }
 async function invokeInternal(req: Request, functionName: string, body: Rec): Promise<Rec> {
   const baseUrl = env("SUPABASE_URL").replace(/\/+$/, "");
-  const authorization = req.headers.get("Authorization") ?? "";
+  const authorization = extractBearerAuthorization(req);
   const response = await fetch(`${baseUrl}/functions/v1/${functionName}`, {
     method: "POST",
     headers: {

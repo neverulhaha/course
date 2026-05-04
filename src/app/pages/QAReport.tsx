@@ -30,6 +30,8 @@ import {
 } from "@/services/courseQa.service";
 import { formatRuDateTime } from "@/lib/dateFormat";
 import { cn } from "@/app/components/ui/utils";
+import Forbidden from "@/app/pages/Forbidden";
+import NotFound from "@/app/pages/NotFound";
 
 const SCORE_LABELS = [
   { key: "structure_score", label: "Структура", description: "Логика модулей, целей и последовательности" },
@@ -112,9 +114,14 @@ export default function QAReportPage() {
       setHistory(reportHistory);
       setVersionSummary(report?.version_id ? await getQaVersionSummary(courseId, report.version_id) : null);
     } catch (err) {
-      const message = sanitizeQaError(err);
-      setError(message);
-      toast.error(message);
+      const raw = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+      if (raw === "forbidden" || raw === "not_found") {
+        setError(raw);
+      } else {
+        const message = sanitizeQaError(err);
+        setError(message);
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -147,9 +154,14 @@ export default function QAReportPage() {
       setVersionSummary(version);
       toast.success("Проверка качества завершена.");
     } catch (err) {
-      const message = sanitizeQaError(err);
-      setError(message);
-      toast.error(message);
+      const raw = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+      if (raw === "forbidden" || raw === "not_found") {
+        setError(raw);
+      } else {
+        const message = sanitizeQaError(err);
+        setError(message);
+        toast.error(message);
+      }
     } finally {
       setRunning(false);
     }
@@ -160,6 +172,9 @@ export default function QAReportPage() {
     const search = new URLSearchParams({ focusEntityType: issue.entity_type, focusEntityId: issue.entity_id });
     navigate(`/app/editor/${courseId}?${search.toString()}`);
   }
+
+  if (error === "forbidden") return <Forbidden />;
+  if (error === "not_found") return <NotFound />;
 
   if (loading) {
     return (

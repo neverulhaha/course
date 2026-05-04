@@ -12,6 +12,8 @@ import type {
 } from "@/entities/course/readModels";
 import { formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
+import { toUserErrorMessage } from "@/lib/errorMessages";
+import { getCourseAccessStatus, getLessonAccessStatus, getQuizAccessStatus } from "@/services/accessControl.service";
 
 export type { ActivityView, CourseProgressView, PlayerCourseData, QuizQuestionView };
 
@@ -252,6 +254,9 @@ export async function fetchPlayerCourse(
   courseId: string,
   userId: string | null
 ): Promise<{ data: PlayerCourseData | null; error: string | null }> {
+  const access = await getCourseAccessStatus(courseId);
+  if (access.status !== "ok") return { data: null, error: access.status === "error" ? access.error ?? "Не удалось проверить доступ к курсу." : access.status };
+
   const { data: course, error: cErr } = await supabase.from("courses").select("id, title").eq("id", courseId).maybeSingle();
   if (cErr) return { data: null, error: cErr.message };
   const crow = asRecord(course);
@@ -407,6 +412,9 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
   assignmentStatus: string | null;
   error: string | null;
 }> {
+  const access = await getLessonAccessStatus(lessonId, courseId);
+  if (access.status !== "ok") return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, error: access.status === "error" ? access.error ?? "Не удалось проверить доступ к уроку." : access.status };
+
   const { data: les } = await supabase.from("lessons").select("id, title, module_id, objective, summary, estimated_duration, learning_outcome").eq("id", lessonId).maybeSingle();
   const lr = asRecord(les);
   if (!lr) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, error: "not_found" };
@@ -456,8 +464,11 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
 }
 
 export async function fetchQuizForTaking(quizId: string): Promise<{ title: string; questions: QuizQuestionView[]; error: string | null }> {
+  const access = await getQuizAccessStatus(quizId);
+  if (access.status !== "ok") return { title: "", questions: [], error: access.status === "error" ? access.error ?? "Не удалось проверить доступ к квизу." : access.status };
+
   const { data: quiz, error: qErr } = await supabase.from("quizzes").select("id, title").eq("id", quizId).maybeSingle();
-  if (qErr) return { title: "", questions: [], error: qErr.message };
+  if (qErr) return { title: "", questions: [], error: toUserErrorMessage(qErr, "Не удалось загрузить квиз.") };
   const qr = asRecord(quiz);
   if (!qr) return { title: "", questions: [], error: "not_found" };
 
