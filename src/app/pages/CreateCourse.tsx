@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { createCourseDraft } from "@/services/courseCreation.service";
-import { generateCoursePlan } from "@/services/aiGeneration.service";
+import { generateCourse } from "@/services/aiGeneration.service";
 import {
   CREATE_COURSE_FORM_DEFAULT,
   mapCreateCourseFormToDraftInput,
@@ -608,7 +608,11 @@ function StepReview({ data }: { data: FormData }) {
           className="text-[length:var(--text-xs)] leading-[var(--leading-relaxed)] text-[var(--gray-600)]"
           style={{ fontFamily: FONT }}
         >
-          ИИ сгенерирует структуру курса. Если выбран режим по источнику, материал будет построен на основе введённого текста; при строгом следовании источнику дополнительные факты не добавляются.
+          {data.generationDepth === "plan"
+            ? "Будет создана структура курса с модулями и уроками."
+            : data.generationDepth === "plan_lessons"
+              ? "Будут созданы структура курса и материалы для всех уроков."
+              : "Будут созданы структура, материалы уроков, проверочные вопросы и проверка качества."} Если выбран режим по источнику, материал будет основан на введённом тексте.
         </p>
       </div>
     </>
@@ -659,7 +663,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
           setCreating(false);
           return;
         }
-        const generated = await generateCoursePlan(id);
+        const generated = await generateCourse(id, { depth: data.generationDepth });
         setCreating(false);
         if (generated.error) {
           navigate(`/app/plan/${id}`, { state: { generationError: generated.error } });
@@ -764,7 +768,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
               style={{ opacity: creating || !user?.id || !ok ? 0.5 : 1, cursor: creating || !user?.id || !ok ? "not-allowed" : "pointer" }}
             >
               <Sparkles className="size-4 shrink-0" />
-              {creating ? "Создание и генерация…" : "Сгенерировать курс"}
+              {creating ? "Создаём курс…" : "Сгенерировать курс"}
             </button>
           ) : (
             <button

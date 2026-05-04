@@ -205,7 +205,7 @@ function LessonEmptyState({ onGenerateLesson, generatingLesson = false }: { onGe
       </div>
       <h3 className="mb-2 text-lg font-extrabold text-[var(--gray-900)]">Урок пуст</h3>
       <p className="mb-6 max-w-md text-sm leading-relaxed text-[var(--gray-500)]">
-        Сгенерируйте содержание урока с помощью ИИ или введите блоки вручную и нажмите «Сохранить содержимое».
+        Сгенерируйте материалы урока, чтобы продолжить работу с содержанием.
       </p>
       <button
         type="button"
@@ -214,7 +214,7 @@ function LessonEmptyState({ onGenerateLesson, generatingLesson = false }: { onGe
         disabled={generatingLesson || !onGenerateLesson}
       >
         <Sparkles className="size-3.5" />
-        {generatingLesson ? "Генерация…" : "Сгенерировать урок"}
+        {generatingLesson ? "Генерация…" : "Сгенерировать материалы урока"}
       </button>
     </div>
   );
@@ -359,7 +359,7 @@ export function LessonCanvas({
         {!hasAnyBlockText && <LessonEmptyState onGenerateLesson={onGenerateLesson} generatingLesson={generatingLesson} />}
 
         <div className="flex flex-col gap-3">
-          {BLOCK_LABELS.map((block) => (
+          {BLOCK_LABELS.filter((block) => blocks[block.id].trim().length > 0).map((block) => (
             <ContentBlock
               key={block.id}
               blockId={block.id}

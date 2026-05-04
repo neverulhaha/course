@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { COURSE_PLAN_PROMPT, LESSON_CONTENT_PROMPT, renderTemplate } from "./prompts/index.ts";
 
 type Action =
   | "generate-course-plan"
@@ -463,10 +464,12 @@ function validatePlanResponse(value: unknown): CoursePlan {
     throw new AppError("AI_RESPONSE_INVALID", "В ответе AI нет массива modules", 502);
   }
 
+  const courseRecord = asRecord(record.course);
+
   return {
-    course_title: clean(record.course_title),
-    course_summary: clean(record.course_summary),
-    warnings: warningsFrom(record),
+    course_title: clean(record.course_title) || clean(courseRecord?.title),
+    course_summary: clean(record.course_summary) || clean(courseRecord?.description),
+    warnings: [...warningsFrom(record), ...(Array.isArray(record.qa_notes) ? record.qa_notes.map(clean).filter(Boolean) : [])],
     modules: record.modules.map((moduleRaw, moduleIndex) => {
       const module = asRecord(moduleRaw);
       if (!module) {
@@ -512,22 +515,90 @@ function validatePlanResponse(value: unknown): CoursePlan {
   };
 }
 
+const FLEXIBLE_LESSON_BLOCK_TYPES = [
+  "introduction",
+  "explanation",
+  "example",
+  "case_study",
+  "step_by_step",
+  "practice",
+  "checklist",
+  "common_mistakes",
+  "reflection",
+  "summary",
+] as const;
+
+function pushJoined(target: string[], title: string, body: string): void {
+  const text = [title, body].map(clean).filter(Boolean).join("\n").trim();
+  if (text) target.push(text);
+}
+
+function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
+  const lessonRecord = asRecord(record.lesson);
+  const blocksRaw = Array.isArray(record.blocks)
+    ? record.blocks
+    : Array.isArray(lessonRecord?.blocks)
+      ? lessonRecord?.blocks as unknown[]
+      : [];
+
+  const theoryParts: string[] = [];
+  const exampleParts: string[] = [];
+  const practiceParts: string[] = [];
+  const checklistParts: string[] = [];
+
+  for (const raw of blocksRaw) {
+    const block = asRecord(raw);
+    if (!block) continue;
+    const type = clean(block.type).toLowerCase();
+    const title = clean(block.title ?? block.label);
+    const body = clean(block.body ?? block.content ?? block.text);
+    if (!body) continue;
+
+    if (["introduction", "explanation", "step_by_step", "summary"].includes(type)) {
+      pushJoined(theoryParts, title, body);
+    } else if (["example", "case_study"].includes(type)) {
+      pushJoined(exampleParts, title, body);
+    } else if (["practice", "reflection"].includes(type)) {
+      pushJoined(practiceParts, title, body);
+    } else if (["checklist", "common_mistakes"].includes(type)) {
+      pushJoined(checklistParts, title, body);
+    } else if ((FLEXIBLE_LESSON_BLOCK_TYPES as readonly string[]).includes(type)) {
+      pushJoined(theoryParts, title, body);
+    }
+  }
+
+  return {
+    theory_text: theoryParts.join("\n\n"),
+    examples_text: exampleParts.join("\n\n"),
+    practice_text: practiceParts.join("\n\n"),
+    checklist_text: checklistParts.join("\n\n"),
+    warnings: warningsFrom(record),
+  };
+}
+
 function validateLessonContentResponse(value: unknown): LessonContentResult {
   const record = asRecord(value);
   if (!record) throw new AppError("AI_RESPONSE_INVALID", "AI вернул не JSON-объект", 502);
 
+  const fromFlexibleBlocks = mapFlexibleLessonBlocks(record);
   const result = {
-    theory_text: clean(record.theory_text),
-    examples_text: clean(record.examples_text),
-    practice_text: clean(record.practice_text),
-    checklist_text: clean(record.checklist_text),
-    warnings: warningsFrom(record),
+    theory_text: clean(record.theory_text) || fromFlexibleBlocks.theory_text,
+    examples_text: clean(record.examples_text) || fromFlexibleBlocks.examples_text,
+    practice_text: clean(record.practice_text) || fromFlexibleBlocks.practice_text,
+    checklist_text: clean(record.checklist_text) || fromFlexibleBlocks.checklist_text,
+    warnings: [...warningsFrom(record), ...fromFlexibleBlocks.warnings].filter(Boolean),
   };
 
-  if (!result.theory_text || !result.examples_text || !result.practice_text || !result.checklist_text) {
-    throw new AppError("AI_RESPONSE_INVALID", "AI вернул неполное содержание урока", 502, {
-      required: ["theory_text", "examples_text", "practice_text", "checklist_text"],
+  const filledBlocks = [result.theory_text, result.examples_text, result.practice_text, result.checklist_text].filter((text) => text.trim().length > 0);
+  if (filledBlocks.length === 0) {
+    throw new AppError("AI_RESPONSE_INVALID", "AI не вернул полезное содержание урока", 502, {
+      accepted: ["blocks", "theory_text", "examples_text", "practice_text", "checklist_text"],
     });
+  }
+
+  const totalLength = filledBlocks.join("\n").length;
+  if (totalLength < 120) {
+    throw new AppError("AI_RESPONSE_INVALID", "AI вернул слишком короткое содержание урока", 502, { length: totalLength });
   }
 
   return result;
@@ -729,40 +800,18 @@ async function generatePlan(req: Request, db: SupabaseClient, userId: string): P
     await preparePlanGeneration(db, courseId, force);
     const source = await loadSources(db, course);
 
-    const prompt = [
-      "Сгенерируй структуру учебного курса. Верни JSON строго в указанной форме:",
-      JSON.stringify({
-        course_title: "string",
-        course_summary: "string",
-        source_usage_summary: "string",
-        warnings: ["string"],
-        modules: [
-          {
-            title: "string",
-            description: "string",
-            estimated_duration: "string или минуты",
-            practice_required: true,
-            source_references: ["string"],
-            lessons: [
-              {
-                title: "string",
-                objective: "string",
-                summary: "string",
-                estimated_duration: "string или минуты",
-                learning_outcome: "string",
-                source_references: ["string"],
-              },
-            ],
-          },
-        ],
-      }),
-      "Требования: модули от простого к сложному; у каждого урока есть цель, описание и результат обучения; длительность уроков согласована с общей длительностью курса; структура соответствует уровню сложности.",
-      "Если формат курса практический или смешанный, добавляй практику на уровне модулей.",
-      `Параметры курса:\n${courseContext(course)}`,
-      source.enabled
-        ? `Источники. only_source_mode=${source.only}. ${source.only ? "Строгий режим: используй только сведения из источника; не добавляй внешние факты, даты, цифры или примеры без опоры на источник; если материала недостаточно, добавь warnings." : "Используй источник как основу; структура курса должна явно учитывать материал источника."}\n${source.text}`
-        : "Курс создаётся без источника.",
-    ].join("\n\n");
+    const prompt = renderTemplate(COURSE_PLAN_PROMPT, {
+      topic: clean(course.topic),
+      level: clean(course.level),
+      goal: clean(course.goal) || "не указана",
+      duration: clean(course.duration) || "не указана",
+      format: clean(course.format) || "смешанный",
+      language: clean(course.language) || "ru",
+      tone: clean(course.tone) || "neutral",
+      source_mode: source.enabled ? "да" : "нет",
+      only_source_mode: source.only ? "да" : "нет",
+      source_text: source.enabled ? source.text : "Источник не используется.",
+    });
 
     const plan = validatePlanResponse(await callAi(buildSystemPrompt(course), prompt));
 
@@ -946,24 +995,36 @@ async function generateLessonContentOnly(
   const source = sourceContext ?? await loadSources(db, course);
   const { lesson, module, neighbors } = await getLessonContext(db, courseId, lessonId);
 
-  const prompt = [
-    "Сгенерируй содержание одного урока. Верни JSON строго в форме:",
-    JSON.stringify({
-      theory_text: "string",
-      examples_text: "string",
-      practice_text: "string",
-      checklist_text: "string",
-      source_usage_summary: "string",
-      warnings: ["string"],
-    }),
-    `Курс:\n${courseContext(course)}`,
-    `Модуль: ${clean(module.title)} — ${clean(module.description)}`,
-    `Урок: ${clean(lesson.title)}\nЦель: ${clean(lesson.objective)}\nОписание: ${clean(lesson.summary)}\nРезультат: ${clean(lesson.learning_outcome)}`,
-    `Соседние уроки: ${neighbors.map((row) => clean(asRecord(row)?.title)).filter(Boolean).join(", ") || "нет"}`,
-    source.enabled
-      ? `Источники. only_source_mode=${source.only}. ${source.only ? "Строгий режим: пиши только то, что можно вывести из источника. Не добавляй неподтверждённые даты, цифры, факты и примеры. Если информации недостаточно, верни warnings и не выдумывай." : "Используй источник как основу для теории, примеров, практики и чек-листа."}\n${source.text}`
-      : "Курс создаётся без источника.",
-  ].join("\n\n");
+  const orderedNeighbors = (neighbors ?? []).map(asRecord).filter(Boolean) as Rec[];
+  const currentPosition = Number(lesson.position ?? 0);
+  const previousLesson = orderedNeighbors
+    .filter((row) => Number(row.position ?? 0) < currentPosition)
+    .sort((a, b) => Number(b.position ?? 0) - Number(a.position ?? 0))[0];
+  const nextLesson = orderedNeighbors
+    .filter((row) => Number(row.position ?? 0) > currentPosition)
+    .sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0))[0];
+
+  const prompt = renderTemplate(LESSON_CONTENT_PROMPT, {
+    course_title: clean(course.title),
+    course_topic: clean(course.topic),
+    level: clean(course.level),
+    course_goal: clean(course.goal) || "не указана",
+    format: clean(course.format) || "смешанный",
+    language: clean(course.language) || "ru",
+    tone: clean(course.tone) || "neutral",
+    module_title: clean(module.title),
+    module_description: clean(module.description),
+    lesson_title: clean(lesson.title),
+    lesson_objective: clean(lesson.objective),
+    lesson_summary: clean(lesson.summary),
+    learning_outcome: clean(lesson.learning_outcome),
+    estimated_duration: clean(lesson.estimated_duration) || "не указана",
+    previous_lesson_title: clean(previousLesson?.title) || "нет",
+    next_lesson_title: clean(nextLesson?.title) || "нет",
+    source_mode: source.enabled ? "да" : "нет",
+    only_source_mode: source.only ? "да" : "нет",
+    source_text: source.enabled ? source.text : "Источник не используется.",
+  });
 
   const content = validateLessonContentResponse(await callAi(buildSystemPrompt(course), prompt));
   await upsertLessonContent(db, lessonId, content);
@@ -1078,6 +1139,7 @@ async function generateCourseContent(req: Request, db: SupabaseClient, userId: s
   const courseId = clean(requestBody.course_id ?? requestBody.courseId);
   const moduleId = clean(requestBody.module_id ?? requestBody.moduleId);
   const force = Boolean(requestBody.force);
+  const retryCount = Math.min(2, Math.max(0, Number(requestBody.retry_count ?? requestBody.retryCount ?? 2) || 0));
   if (!courseId) throw new AppError("INVALID_INPUT", "Нужно передать course_id", 400);
 
   await audit(db, {
@@ -1086,7 +1148,7 @@ async function generateCourseContent(req: Request, db: SupabaseClient, userId: s
     action: "generate_course_content_started",
     entityType: moduleId ? "module" : "course",
     entityId: moduleId || courseId,
-    metadata: { module_id: moduleId || null, force },
+    metadata: { module_id: moduleId || null, force, retry_count: retryCount },
   });
 
   try {
@@ -1108,16 +1170,28 @@ async function generateCourseContent(req: Request, db: SupabaseClient, userId: s
     const failed_lessons: Rec[] = [];
 
     for (const lessonId of lessonIds) {
-      try {
-        if (!force && (await lessonHasContent(db, lessonId))) {
-          skipped_lessons.push(lessonId);
-          continue;
-        }
+      if (!force && (await lessonHasContent(db, lessonId))) {
+        skipped_lessons.push(lessonId);
+        continue;
+      }
 
-        await generateLessonContentOnly(db, course, courseId, lessonId, source);
-        generated_lessons.push(lessonId);
-      } catch (error) {
-        failed_lessons.push({ lesson_id: lessonId, ...errorPayload(error) });
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+        try {
+          await generateLessonContentOnly(db, course, courseId, lessonId, source);
+          generated_lessons.push(lessonId);
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < retryCount) {
+            console.warn("lesson content generation retry", { courseId, lessonId, attempt: attempt + 1 });
+          }
+        }
+      }
+
+      if (lastError) {
+        failed_lessons.push({ lesson_id: lessonId, ...errorPayload(lastError) });
       }
     }
 
@@ -1138,7 +1212,7 @@ async function generateCourseContent(req: Request, db: SupabaseClient, userId: s
       action: "generate_course_content_completed",
       entityType: moduleId ? "module" : "course",
       entityId: moduleId || courseId,
-      metadata: { generated_lessons, skipped_lessons, failed_lessons, version_id: versionId, course_status: courseStatus, generation_target: moduleId ? "module" : "course", ...sourceAuditMetadata(source) },
+      metadata: { generated_lessons, skipped_lessons, failed_lessons, version_id: versionId, course_status: courseStatus, retry_count: retryCount, generation_target: moduleId ? "module" : "course", ...sourceAuditMetadata(source) },
     });
 
     return jsonResponse({

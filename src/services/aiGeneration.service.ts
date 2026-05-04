@@ -85,6 +85,20 @@ export const generateCourseContent = (courseId: string, options: { moduleId?: st
     force: Boolean(options.force),
   });
 
+
+export const generateCourse = (courseId: string, options: { depth?: string; force?: boolean } = {}) =>
+  invoke<{
+    course_id: string;
+    generation_depth: string;
+    status: string;
+    metrics: { moduleCount: number; lessonCount: number; filledLessonCount: number; courseQuizCount: number; qaReportCount: number; versionCount: number };
+    progress: unknown[];
+  }>("generate-course", {
+    course_id: courseId,
+    generation_depth: options.depth ?? null,
+    force: Boolean(options.force),
+  });
+
 export type RegenerateLessonBlockPayload = {
   courseId: string;
   lessonId: string;

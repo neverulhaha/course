@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { COURSE_QUIZ_PROMPT, LESSON_QUIZ_PROMPT, renderTemplate } from "./prompts/index.ts";
 
 type Action =
   | "generate-lesson-quiz"
@@ -401,15 +402,24 @@ async function generateLessonQuiz(req: Request, db: SupabaseClient, userId: stri
     const source = await loadSources(db, course);
     const material = [`Теория:\n${clean(content.theory_text)}`, `Примеры:\n${clean(content.examples_text)}`, `Практика:\n${clean(content.practice_text)}`, `Чек-лист:\n${clean(content.checklist_text)}`].join("\n\n");
     const prompt = [
-      "Сгенерируй квиз по одному уроку. Верни строго JSON:",
+      renderTemplate(LESSON_QUIZ_PROMPT, {
+        course_title: clean(course.title),
+        level: clean(course.level),
+        course_goal: clean(course.goal) || "не указана",
+        lesson_title: clean(lesson.title),
+        lesson_objective: clean(lesson.objective),
+        learning_outcome: clean(lesson.learning_outcome),
+        lesson_blocks: material,
+        question_count: String(questionsCount),
+      }),
+      "Формат ответа:",
       JSON.stringify({ title: "string", description: "string", warnings: ["string"], questions: [{ question_text: "string", question_type: "single_choice", explanation: "string", options: [{ answer_text: "string", is_correct: true }, { answer_text: "string", is_correct: false }, { answer_text: "string", is_correct: false }, { answer_text: "string", is_correct: false }] }] }),
-      `Количество вопросов: ${questionsCount}. У каждого вопроса 4 варианта ответа, ровно один правильный.`,
-      `Курс:\n${courseContext(course)}`,
       `Модуль: ${clean(module.title)} — ${clean(module.description)}`,
-      `Урок: ${clean(lesson.title)}\nЦель: ${clean(lesson.objective)}\nОписание: ${clean(lesson.summary)}\nРезультат: ${clean(lesson.learning_outcome)}`,
-      `Материал урока:\n${material}`,
-      source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материала урока." : "Учитывай источник как контекст."}\n${source.text}` : "Курс без источника.",
-    ].join("\n\n");
+      source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материала урока." : "Учитывай источник как контекст."}
+${source.text}` : "Курс без источника.",
+    ].join("
+
+");
     const quiz = validateQuizResponse(await callAi(buildSystemPrompt(course), prompt), questionsCount);
     const quizId = await createQuizGraph(db, { courseId, lessonId, quiz });
     const versionId = await createCourseVersion(db, courseId, userId, "lesson_quiz_generated", `Сгенерирован квиз по уроку: ${clean(lesson.title)}`);
@@ -450,13 +460,22 @@ async function generateCourseQuiz(req: Request, db: SupabaseClient, userId: stri
     if (!courseMaterial.trim()) throw new AppError("COURSE_CONTENT_NOT_READY", "В уроках нет текста для генерации итогового квиза", 400);
     const source = await loadSources(db, course);
     const prompt = [
-      "Сгенерируй итоговый квиз по всему курсу. Верни строго JSON:",
+      renderTemplate(COURSE_QUIZ_PROMPT, {
+        course_title: clean(course.title),
+        course_topic: clean(course.topic),
+        level: clean(course.level),
+        course_goal: clean(course.goal) || "не указана",
+        course_learning_outcomes: "Ключевые результаты перечислены в уроках курса.",
+        course_structure_with_lessons: courseMaterial,
+        question_count: String(questionsCount),
+      }),
+      "Формат ответа:",
       JSON.stringify({ title: "string", description: "string", warnings: ["string"], questions: [{ question_text: "string", question_type: "single_choice", explanation: "string", options: [{ answer_text: "string", is_correct: true }, { answer_text: "string", is_correct: false }, { answer_text: "string", is_correct: false }, { answer_text: "string", is_correct: false }] }] }),
-      `Количество вопросов: ${questionsCount}. Покрой разные модули, не концентрируйся только на начале курса.`,
-      `Курс:\n${courseContext(course)}`,
-      `Материал курса:\n${courseMaterial}`,
-      source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материалов курса." : "Учитывай источник как контекст."}\n${source.text}` : "Курс без источника.",
-    ].join("\n\n");
+      source.enabled ? `Источник. only_source_mode=${source.only}. ${source.only ? "Строго не добавляй факты вне источника и материалов курса." : "Учитывай источник как контекст."}
+${source.text}` : "Курс без источника.",
+    ].join("
+
+");
     const quiz = validateQuizResponse(await callAi(buildSystemPrompt(course), prompt), questionsCount);
     const quizId = await createQuizGraph(db, { courseId, lessonId: null, quiz });
     const versionId = await createCourseVersion(db, courseId, userId, "course_quiz_generated", "Сгенерирован итоговый квиз курса");

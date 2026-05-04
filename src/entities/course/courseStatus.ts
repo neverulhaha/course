@@ -35,19 +35,19 @@ export const COURSE_STATUS_UI: Record<
     bg: "rgba(142,155,171,0.08)",
   },
   plan: {
-    label: "План",
+    label: "План готов",
     dot: "#4A90E2",
     color: "#4A90E2",
     bg: "rgba(74,144,226,0.07)",
   },
   partial: {
-    label: "В работе",
+    label: "Создан частично",
     dot: "#F1C40F",
     color: "#D4A017",
     bg: "rgba(241,196,15,0.08)",
   },
   ready: {
-    label: "Готово",
+    label: "Курс готов",
     dot: "#2ECC71",
     color: "#2ECC71",
     bg: "rgba(46,204,113,0.07)",
