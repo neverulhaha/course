@@ -29,6 +29,8 @@ import { generateCourseContent, generateLessonContent, regenerateLessonBlock, ty
 import { generateLessonQuiz, generateCourseQuiz } from "@/services/quiz.service";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/app/components/ui/utils";
+import { toast } from "sonner";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 const FONT = "'Montserrat', sans-serif";
 
@@ -155,6 +157,13 @@ export default function CourseEditor() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [lessonDirty, setLessonDirty] = useState(false);
 
+  useEffect(() => {
+    if (!lessonDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [lessonDirty]);
+
   const reloadBundle = async () => {
     if (!courseId || !userId) {
       setLoading(false);
@@ -170,7 +179,7 @@ export default function CourseEditor() {
       return;
     }
     if (error) {
-      setLoadError(error);
+      setLoadError(toUserErrorMessage(error, "Не удалось загрузить курс. Попробуйте ещё раз."));
       setLoading(false);
       return;
     }
@@ -232,16 +241,20 @@ export default function CourseEditor() {
     try {
       const result = await action();
       if (result.error) {
-        setActionError(result.error);
-        setGenerationNotice({ type: "error", message: result.error });
+        const message = toUserErrorMessage(result.error, "Не удалось сохранить данные. Попробуйте ещё раз.");
+        setActionError(message);
+        setGenerationNotice({ type: "error", message });
+        toast.error(message);
         return;
       }
       await reloadBundle();
       showSaved(result.warning);
+      toast.success(result.warning ? "Изменения сохранены с предупреждением" : "Изменения сохранены");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось сохранить изменения";
+      const message = toUserErrorMessage(error, "Не удалось сохранить изменения. Попробуйте ещё раз.");
       setActionError(message);
       setGenerationNotice({ type: "error", message });
+      toast.error(message);
     } finally {
       setSavingKey(null);
     }
@@ -320,17 +333,21 @@ export default function CourseEditor() {
     try {
       const res = await fn();
       if (res.error) {
-        setActionError(res.error);
-        setGenerationNotice({ type: "error", message: res.error });
+        const message = toUserErrorMessage(res.error, "Не удалось выполнить действие. Попробуйте ещё раз.");
+        setActionError(message);
+        setGenerationNotice({ type: "error", message });
+        toast.error(message);
         return;
       }
       await reloadBundle();
       setShowSaveIndicator(true);
       setTimeout(() => setShowSaveIndicator(false), 2000);
+      toast.success(key === "lesson" ? "Урок сгенерирован" : key === "lesson-quiz" || key === "course-quiz" ? "Квиз создан" : "Действие выполнено");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось выполнить действие с ИИ";
+      const message = toUserErrorMessage(error, "Не удалось выполнить действие с ИИ. Попробуйте ещё раз.");
       setActionError(message);
       setGenerationNotice({ type: "error", message });
+      toast.error(message);
     } finally {
       setBusyAction(null);
     }
@@ -351,8 +368,10 @@ export default function CourseEditor() {
       try {
         const { data, error } = await generateCourseContent(courseId);
         if (error) {
-          setActionError(error);
-          setGenerationNotice({ type: "error", message: error });
+          const message = toUserErrorMessage(error, "Не удалось выполнить действие. Попробуйте ещё раз.");
+          setActionError(message);
+          setGenerationNotice({ type: "error", message });
+          toast.error(message);
           return;
         }
 
@@ -381,9 +400,10 @@ export default function CourseEditor() {
         setShowSaveIndicator(true);
         setTimeout(() => setShowSaveIndicator(false), 2000);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Не удалось сгенерировать содержание курса";
+        const message = toUserErrorMessage(error, "Не удалось сгенерировать содержание курса. Попробуйте ещё раз.");
         setActionError(message);
         setGenerationNotice({ type: "error", message });
+        toast.error(message);
       } finally {
         setBusyAction(null);
       }
@@ -415,6 +435,7 @@ export default function CourseEditor() {
     if (!targetBlock || !targetBlock.content.trim()) {
       setActionError("Этот блок пустой. Сначала сгенерируйте урок целиком.");
       setGenerationNotice({ type: "error", message: "Этот блок пустой. Сначала сгенерируйте урок целиком." });
+      toast.error("Этот блок пустой. Сначала сгенерируйте урок целиком.");
       return;
     }
 
@@ -435,8 +456,10 @@ export default function CourseEditor() {
         });
 
         if (error) {
-          setActionError(error);
-          setGenerationNotice({ type: "error", message: error });
+          const message = toUserErrorMessage(error, "Не удалось выполнить действие. Попробуйте ещё раз.");
+          setActionError(message);
+          setGenerationNotice({ type: "error", message });
+          toast.error(message);
           return;
         }
 
@@ -457,18 +480,17 @@ export default function CourseEditor() {
             message: "Блок обновлён, но есть предупреждения: " + data.warnings.join(" "),
           });
         } else {
-          setGenerationNotice({
-            type: "success",
-            message: "Блок урока обновлён. Остальные блоки не изменялись.",
-          });
+          setGenerationNotice({ type: "success", message: "Блок урока обновлён. Остальные блоки не изменялись." });
+          toast.success("Блок обновлён");
         }
 
         setShowSaveIndicator(true);
         setTimeout(() => setShowSaveIndicator(false), 2000);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Не удалось перегенерировать блок";
+        const message = toUserErrorMessage(error, "Не удалось перегенерировать блок. Попробуйте ещё раз.");
         setActionError(message);
         setGenerationNotice({ type: "error", message });
+        toast.error(message);
       } finally {
         setBusyAction(null);
       }
@@ -727,8 +749,8 @@ export default function CourseEditor() {
         onAssistant={openAssistant}
         prev={prev}
         next={next}
-        onPrev={() => prev && setSelectedLesson(prev)}
-        onNext={() => next && setSelectedLesson(next)}
+        onPrev={() => prev && selectLessonSafely(prev)}
+        onNext={() => next && selectLessonSafely(next)}
       />
     </div>
   );

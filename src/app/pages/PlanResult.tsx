@@ -6,6 +6,8 @@ import { LoadingState } from "../components/LoadingState";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchCoursePlanStructure, syncCourseStatusFromContent } from "@/services/courseEditor.service";
 import { runCourseGenerationSession } from "@/services/aiGeneration.service";
+import { toast } from "sonner";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 export default function PlanResult() {
   const { courseId } = useParams();
@@ -55,19 +57,23 @@ export default function PlanResult() {
     setIsLoading(false);
   };
 
-  const handleGeneratePlan = async () => {
-    if (!courseId) return;
+  const handleGeneratePlan = async (force = false) => {
+    if (!courseId || generatingPlan) return;
+    if (force && !window.confirm("Повторная генерация плана может изменить текущую структуру курса. Продолжить?")) return;
     setGeneratingPlan(true);
     setLoadError(null);
     setGenerationError(null);
-    const res = await runCourseGenerationSession(courseId, { depth: "plan" });
+    const res = await runCourseGenerationSession(courseId, { depth: "plan", force });
     setGeneratingPlan(false);
     if (res.error) {
-      setGenerationError(res.error);
+      const message = toUserErrorMessage(res.error, "Не удалось выполнить генерацию. Попробуйте ещё раз.");
+      setGenerationError(message);
+      toast.error(message);
       return;
     }
     setIsLoading(true);
     await loadPlan();
+    toast.success("План сгенерирован");
   };
 
   useEffect(() => {
@@ -138,7 +144,7 @@ export default function PlanResult() {
         {courseId && loadError !== "auth" && (
           <button
             type="button"
-            onClick={handleGeneratePlan}
+            onClick={() => void handleGeneratePlan(false)}
             disabled={generatingPlan}
             className="rounded-xl bg-[#4A90E2] px-5 py-3 text-sm font-bold text-white disabled:opacity-50"
           >
@@ -266,6 +272,16 @@ export default function PlanResult() {
                   <BookOpen className="w-5 h-5" />
                   Перейти к обучению
                 </Link>
+
+                <button
+                  type="button"
+                  onClick={() => void handleGeneratePlan(true)}
+                  disabled={generatingPlan}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-200 bg-amber-50 px-5 py-4 font-semibold text-amber-800 transition-all hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Sparkles className="h-5 w-5" />
+                  {generatingPlan ? "Генерация плана…" : "Повторно сгенерировать план"}
+                </button>
               </div>
 
               <hr className="my-6 border-gray-200" />

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 type Rec = Record<string, unknown>;
 
@@ -53,9 +54,8 @@ function messageFromBackend(value: unknown): string | null {
   const error = asRecord(asRecord(value)?.error);
   const message = error?.message;
   const code = error?.code;
-  if (typeof message === "string" && message.trim()) {
-    return typeof code === "string" && code.trim() ? `${message} (${code})` : message;
-  }
+  if (typeof message === "string" && message.trim()) return toUserErrorMessage({ error: { code, message } }, "Не удалось выполнить действие. Попробуйте ещё раз.");
+  if (typeof code === "string" && code.trim()) return toUserErrorMessage({ error: { code } }, "Не удалось выполнить действие. Попробуйте ещё раз.");
   return null;
 }
 
@@ -71,7 +71,7 @@ async function invoke<T>(name: string, body: Rec): Promise<{ data: T | null; err
         // ignore
       }
     }
-    return { data: null, error: error.message || "Не удалось выполнить действие" };
+    return { data: null, error: toUserErrorMessage(error, "Не удалось выполнить действие. Попробуйте ещё раз.") };
   }
   const backendMessage = messageFromBackend(data);
   if (backendMessage) return { data: null, error: backendMessage };

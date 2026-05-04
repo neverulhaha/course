@@ -2,6 +2,7 @@
  * Редактор курса автора: бандл редактора, план, заголовок урока, синхронизация статуса и первой версии.
  */
 import { supabase } from "@/lib/supabase/client";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 import {
   inferCourseStatusFromMetrics,
   normalizeCourseStatus,
@@ -77,13 +78,8 @@ function cleanPatch<T extends object>(patch: T): Partial<T> {
 
 function userError(message: string): string {
   const low = message.toLowerCase();
-  if (low.includes("row-level security") || low.includes("permission") || low.includes("forbidden")) {
-    return "Нет доступа к этой операции.";
-  }
-  if (low.includes("duplicate key") || low.includes("unique")) {
-    return "Не удалось сохранить порядок: конфликт позиций. Попробуйте повторить.";
-  }
-  return message;
+  if (low.includes("duplicate key") || low.includes("unique")) return "Не удалось сохранить порядок: конфликт позиций. Попробуйте повторить.";
+  return toUserErrorMessage(message, "Не удалось сохранить данные. Попробуйте ещё раз.");
 }
 
 async function verifyCourseOwner(courseId: string, userId: string): Promise<{ ok: boolean; error: string | null }> {

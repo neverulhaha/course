@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 export type AiBlockType = "theory_text" | "examples_text" | "practice_text" | "checklist_text";
 export type AiBlockCommand = "shorten" | "simplify" | "add_examples" | "add_practice" | "expand" | "improve_clarity" | "custom";
@@ -34,15 +35,15 @@ async function errorMessage(error: unknown): Promise<string> {
       const payload = await e.context.clone().json();
       const backendMessage = extractBackendMessage(payload);
       const backendCode = extractBackendErrorCode(payload);
-      if (backendMessage && backendCode) return `${backendMessage} (${backendCode})`;
-      if (backendMessage) return backendMessage;
+      if (backendCode) return toUserErrorMessage({ error: { code: backendCode, message: backendMessage } }, "Не удалось выполнить генерацию. Попробуйте ещё раз.");
+      if (backendMessage) return toUserErrorMessage(backendMessage, "Не удалось выполнить генерацию. Попробуйте ещё раз.");
     } catch {
       // ignore and fall through to generic message
     }
   }
 
-  if (typeof e?.message === "string" && e.message.trim()) return e.message;
-  return "Не удалось выполнить действие";
+  if (typeof e?.message === "string" && e.message.trim()) return toUserErrorMessage(e.message, "Не удалось выполнить действие. Попробуйте ещё раз.");
+  return "Не удалось выполнить действие. Попробуйте ещё раз.";
 }
 
 async function invoke<T>(name: string, body: Record<string, unknown>): Promise<AiServiceResult<T>> {
@@ -50,7 +51,7 @@ async function invoke<T>(name: string, body: Record<string, unknown>): Promise<A
   const accessToken = sessionData.session?.access_token;
 
   if (!accessToken) {
-    return { data: null, error: "Войдите в аккаунт и повторите действие" };
+    return { data: null, error: "Войдите в систему." };
   }
 
   const { data, error } = await supabase.functions.invoke<T | { error: unknown }>(name, {
@@ -61,7 +62,8 @@ async function invoke<T>(name: string, body: Record<string, unknown>): Promise<A
   if (error) return { data: null, error: await errorMessage(error) };
 
   const backendMessage = extractBackendMessage(data);
-  if (backendMessage) return { data: null, error: backendMessage };
+  const backendCode = extractBackendErrorCode(data);
+  if (backendMessage || backendCode) return { data: null, error: toUserErrorMessage({ error: { code: backendCode, message: backendMessage } }, "Не удалось выполнить действие. Попробуйте ещё раз.") };
 
   return { data: (data as T) ?? null, error: null };
 }
@@ -115,7 +117,7 @@ export async function runCourseGenerationSession(
   onProgress?: (summary: GenerationSessionSummary) => void,
 ): Promise<AiServiceResult<GenerationSessionSummary>> {
   const started = await startGenerationSession(courseId, options);
-  if (started.error || !started.data) return { data: null, error: started.error ?? "Не удалось начать создание курса" };
+  if (started.error || !started.data) return { data: null, error: toUserErrorMessage(started.error, "Не удалось начать создание курса. Попробуйте ещё раз.") };
 
   let summary = started.data;
   onProgress?.(summary);
@@ -125,19 +127,19 @@ export async function runCourseGenerationSession(
 
   for (let i = 0; i < maxIterations; i += 1) {
     if (["completed", "partially_completed", "failed", "cancelled"].includes(summary.status)) {
-      return { data: summary, error: summary.status === "failed" ? summary.last_error_message ?? "Не удалось завершить создание курса" : null };
+      return { data: summary, error: summary.status === "failed" ? toUserErrorMessage(summary.last_error_message, "Не удалось завершить создание курса. Попробуйте ещё раз.") : null };
     }
 
     const processed = await processGenerationStep(summary.session_id);
     if (processed.error || !processed.data) {
-      return { data: summary, error: processed.error ?? "Не удалось продолжить создание курса" };
+      return { data: summary, error: toUserErrorMessage(processed.error, "Не удалось продолжить создание курса. Попробуйте ещё раз.") };
     }
 
     summary = processed.data;
     onProgress?.(summary);
 
     if (["completed", "partially_completed", "failed", "cancelled"].includes(summary.status)) {
-      return { data: summary, error: summary.status === "failed" ? summary.last_error_message ?? "Не удалось завершить создание курса" : null };
+      return { data: summary, error: summary.status === "failed" ? toUserErrorMessage(summary.last_error_message, "Не удалось завершить создание курса. Попробуйте ещё раз.") : null };
     }
 
     await wait(delayMs);

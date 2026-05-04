@@ -2,6 +2,7 @@
  * Создание курса: единственная точка RPC `create_course_draft`.
  */
 import { supabase } from "@/lib/supabase/client";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 import type { CreateCourseDraftInput } from "@/entities/course/createCourseDraft";
 import { mapCreateCourseDraftInputToRpcPayload } from "@/entities/course/createCourseDraft";
 
@@ -26,8 +27,8 @@ export async function createCourseDraft(
 ): Promise<{ id: string | null; error: Error | null }> {
   const payload = mapCreateCourseDraftInputToRpcPayload(input);
   const { data, error } = await supabase.rpc("create_course_draft", payload);
-  if (error) return { id: null, error };
+  if (error) return { id: null, error: new Error(toUserErrorMessage(error, "Не удалось создать курс. Попробуйте ещё раз.")) };
   const id = parseCreateCourseDraftRpcResult(data);
-  if (!id) return { id: null, error: new Error("create_course_draft: пустой ответ") };
+  if (!id) return { id: null, error: new Error("Не удалось создать курс. Сервер вернул пустой ответ.") };
   return { id, error: null };
 }

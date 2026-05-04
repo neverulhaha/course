@@ -13,6 +13,7 @@ import {
   type CourseVersionDetails,
   type CourseVersionListItem,
 } from "@/services/courseVersion.service";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 const RESTORE_CONFIRMATION_TEXT = "Откат восстановит структуру и содержание курса из выбранной версии. История прохождения и попытки квизов не будут удалены.";
 
@@ -69,7 +70,7 @@ export default function VersionHistoryPage() {
       setVersions(nextVersions);
       setSelected((current) => current && nextVersions.some((version) => version.id === current.id) ? current : null);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Не удалось загрузить версии курса";
+      const message = toUserErrorMessage(caught, "Не удалось загрузить версии курса. Попробуйте ещё раз.");
       setError(message);
       toast.error(message);
     } finally {
@@ -89,7 +90,7 @@ export default function VersionHistoryPage() {
       const version = await getCourseVersion(courseId, versionId);
       setSelected(version);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Не удалось открыть версию";
+      const message = toUserErrorMessage(caught, "Не удалось открыть версию. Попробуйте ещё раз.");
       setError(message);
       toast.error(message);
     } finally {
@@ -113,7 +114,7 @@ export default function VersionHistoryPage() {
       }
       setRestoreTarget(version);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Не удалось подготовить восстановление версии";
+      const message = toUserErrorMessage(caught, "Не удалось подготовить восстановление версии. Попробуйте ещё раз.");
       setError(message);
       toast.error(message);
     } finally {
@@ -134,7 +135,7 @@ export default function VersionHistoryPage() {
       setRestoreTarget(null);
       toast.success(`Версия №${target.version_number} восстановлена. Создана новая версия отката.`);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Не удалось восстановить версию";
+      const message = toUserErrorMessage(caught, "Не удалось восстановить версию. Попробуйте ещё раз.");
       setError(message);
       toast.error(message);
     } finally {

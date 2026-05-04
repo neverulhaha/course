@@ -28,6 +28,7 @@ import { listMyCourses, type MyCourseListItem } from "@/services/courseQuery.ser
 import { deleteCourse } from "@/services/courseDelete.service";
 import { buildCoursePlaybackPath } from "@/services/coursePlayback.service";
 import { cn } from "@/app/components/ui/utils";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 type StatusFilter = "all" | "draft" | "plan" | "partial" | "ready" | "error";
 type SortMode = "newest" | "oldest" | "recently_opened" | "title";
@@ -393,13 +394,17 @@ export default function MyCourses() {
   const [deleting, setDeleting] = useState(false);
 
   const loadCourses = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      setError("Войдите в систему.");
+      return;
+    }
     setLoading(true);
     setError(null);
     const result = await listMyCourses(user.id);
     if (result.error) {
       setCourses([]);
-      setError(result.error.message || "Не удалось загрузить курсы");
+      setError(toUserErrorMessage(result.error, "Не удалось загрузить курсы. Попробуйте ещё раз."));
     } else {
       setCourses(result.courses);
     }
@@ -425,7 +430,7 @@ export default function MyCourses() {
         return byOpen || timestamp(b.updatedAt) - timestamp(a.updatedAt);
       }
       if (sortMode === "title") return a.title.localeCompare(b.title, "ru");
-      return timestamp(b.updatedAt) - timestamp(a.updatedAt);
+      return timestamp(b.createdAt) - timestamp(a.createdAt);
     });
   }, [courses, search, sortMode, statusFilter]);
 
@@ -449,7 +454,7 @@ export default function MyCourses() {
     const result = await deleteCourse(courseToDelete.id);
     setDeleting(false);
     if (result.error) {
-      toast.error(result.error.message || "Не удалось удалить курс");
+      toast.error(toUserErrorMessage(result.error, "Не удалось удалить курс. Попробуйте ещё раз."));
       return;
     }
     setCourses((items) => items.filter((item) => item.id !== courseToDelete.id));

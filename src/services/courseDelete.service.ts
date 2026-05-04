@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -9,14 +10,16 @@ async function extractErrorMessage(error: unknown): Promise<string> {
   if (e?.context instanceof Response) {
     try {
       const payload = await e.context.clone().json();
-      const message = asRecord(asRecord(payload)?.error)?.message;
-      if (typeof message === "string" && message.trim()) return message;
+      const backendError = asRecord(asRecord(payload)?.error);
+      const message = backendError?.message;
+      const code = backendError?.code;
+      if ((typeof message === "string" && message.trim()) || typeof code === "string") return toUserErrorMessage({ error: { code, message } }, "Не удалось удалить курс. Попробуйте ещё раз.");
     } catch {
       // keep fallback
     }
   }
-  if (typeof e?.message === "string" && e.message.trim()) return e.message;
-  return "Не удалось удалить курс";
+  if (typeof e?.message === "string" && e.message.trim()) return toUserErrorMessage(e.message, "Не удалось удалить курс. Попробуйте ещё раз.");
+  return "Не удалось удалить курс. Попробуйте ещё раз.";
 }
 
 export async function deleteCourse(courseId: string): Promise<{ error: Error | null }> {
@@ -28,7 +31,8 @@ export async function deleteCourse(courseId: string): Promise<{ error: Error | n
 
   const backendError = asRecord(asRecord(data)?.error);
   const message = backendError?.message;
-  if (typeof message === "string" && message.trim()) return { error: new Error(message) };
+  const code = backendError?.code;
+  if ((typeof message === "string" && message.trim()) || typeof code === "string") return { error: new Error(toUserErrorMessage({ error: { code, message } }, "Не удалось удалить курс. Попробуйте ещё раз.")) };
 
   return { error: null };
 }

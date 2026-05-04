@@ -25,6 +25,8 @@ import {
   submitLessonAssignment,
 } from "@/services/coursePlayback.service";
 import { getCourseLearningStats, recalculateProgress, type CourseLearningStats } from "@/services/progress.service";
+import { toast } from "sonner";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 import type { PlayerCourse, PlayerLesson } from "@/entities/course/types";
 
 type LessonBlock = ReturnType<typeof lessonContentToPlayerBlocks>["blocks"][number];
@@ -304,7 +306,9 @@ export default function CoursePlayer() {
     const result = await insertLessonCompletion(user?.id ?? "", activeLesson.id, courseId);
     setCompleteBusy(false);
     if (result.error) {
-      setNotice("Не удалось завершить урок. Попробуйте ещё раз.");
+      const message = toUserErrorMessage(result.error, "Не удалось завершить урок. Попробуйте ещё раз.");
+      setNotice(message);
+      toast.error(message);
       return;
     }
 
@@ -316,6 +320,7 @@ export default function CoursePlayer() {
       })),
     } : prev);
     setNotice("Урок завершён.");
+    toast.success("Урок завершён");
     void refreshLearningStats();
 
     if (nextLesson) {
@@ -334,8 +339,15 @@ export default function CoursePlayer() {
     setNotice(null);
     const result = await submitLessonAssignment(courseId, activeLesson.id, text);
     setAssignmentBusy(false);
-    setNotice(result.error ? "Не удалось отправить задание. Попробуйте ещё раз." : "Практическое задание отправлено.");
-    if (!result.error) void refreshLearningStats();
+    if (result.error) {
+      const message = toUserErrorMessage(result.error, "Не удалось отправить задание. Попробуйте ещё раз.");
+      setNotice(message);
+      toast.error(message);
+      return;
+    }
+    setNotice("Практическое задание отправлено.");
+    toast.success("Изменения сохранены");
+    void refreshLearningStats();
   };
 
   if (pageState === "loading") {

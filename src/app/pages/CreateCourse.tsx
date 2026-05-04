@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 import { createCourseDraft } from "@/services/courseCreation.service";
 import { runCourseGenerationSession, type GenerationSessionSummary } from "@/services/aiGeneration.service";
 import {
@@ -636,6 +638,14 @@ function CourseCreationFlow({ initialType }: FlowProps) {
     ...CREATE_COURSE_FORM_DEFAULT,
     type: initialType ?? null,
   });
+  const hasUnsavedDraft = useMemo(() => Boolean(data.type || data.topic.trim() || data.goal.trim() || data.sourceContent.trim()), [data]);
+
+  useEffect(() => {
+    if (!hasUnsavedDraft || creating) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [creating, hasUnsavedDraft]);
 
   const update = (patch: Partial<FormData>) => setData((d) => ({ ...d, ...patch }));
 
@@ -646,8 +656,9 @@ function CourseCreationFlow({ initialType }: FlowProps) {
   const ok      = canProceed(current.id, data);
 
   const handleNext = () => {
+    if (creating) return;
     if (isLast) {
-      if (!user?.id) return;
+      if (!user?.id) { const message = "Войдите в систему."; setSubmitError(message); toast.error(message); return; }
       setSubmitError(null);
       setGenerationProgress(null);
       setCreating(true);
@@ -655,16 +666,20 @@ function CourseCreationFlow({ initialType }: FlowProps) {
         const validationError = validateCreateCourseFormForSubmit(data);
         if (validationError) {
           setSubmitError(validationError);
+          toast.error(validationError);
           setCreating(false);
           return;
         }
         const input = mapCreateCourseFormToDraftInput(data);
         const { id, error } = await createCourseDraft(input);
         if (error || !id) {
-          setSubmitError(error?.message ?? "Не удалось создать курс");
+          const message = toUserErrorMessage(error, "Не удалось создать курс. Попробуйте ещё раз.");
+          setSubmitError(message);
+          toast.error(message);
           setCreating(false);
           return;
         }
+        toast.success("Курс создан");
         const generated = await runCourseGenerationSession(
           id,
           { depth: data.generationDepth },
@@ -672,13 +687,18 @@ function CourseCreationFlow({ initialType }: FlowProps) {
         );
         setCreating(false);
         if (generated.error) {
-          navigate(`/app/plan/${id}`, { state: { generationError: generated.error } });
+          const message = toUserErrorMessage(generated.error, "Не удалось выполнить генерацию. Попробуйте ещё раз.");
+          toast.error(message);
+          navigate(`/app/plan/${id}`, { state: { generationError: message } });
           return;
         }
         if (generated.data?.status === "partially_completed") {
-          navigate(`/app/plan/${id}`, { state: { generationError: generated.data.last_error_message ?? "Курс создан частично" } });
+          const message = toUserErrorMessage(generated.data.last_error_message, "Курс создан частично. Проверьте материалы и повторите генерацию для пустых уроков.");
+          toast.error(message);
+          navigate(`/app/plan/${id}`, { state: { generationError: message } });
           return;
         }
+        toast.success("План сгенерирован");
         navigate(`/app/plan/${id}`);
       })();
     } else {

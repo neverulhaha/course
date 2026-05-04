@@ -12,6 +12,7 @@ import {
 } from "@/entities/course/versioning";
 import { formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 export type VersionRowView = VersionListItem;
 export type VersionChangeType = VersionChangeTypeUi;
@@ -276,7 +277,7 @@ export async function fetchCourseVersions(courseId: string): Promise<{
     .eq("course_id", courseId)
     .order("created_at", { ascending: false });
 
-  if (error) return { courseTitle, versions: [], error: error.message };
+  if (error) return { courseTitle, versions: [], error: toUserErrorMessage(error, "Не удалось загрузить версии. Попробуйте ещё раз.") };
 
   const versions: VersionListItem[] = [];
   for (const r of rows ?? []) {
@@ -403,8 +404,7 @@ async function parseEdgeFunctionError(error: unknown): Promise<Error> {
       const backendError = asRecord(root?.error);
       const message = str(backendError?.message);
       const code = str(backendError?.code);
-      if (message && code) return new Error(`${message} (${code})`);
-      if (message) return new Error(message);
+      if (message || code) return new Error(toUserErrorMessage({ code, message }, "Не удалось восстановить версию. Попробуйте ещё раз."));
     } catch {
       // fall through
     }
@@ -414,14 +414,10 @@ async function parseEdgeFunctionError(error: unknown): Promise<Error> {
   const payload = asRecord(errorRecord?.error);
   const code = str(payload?.code);
   const message = str(payload?.message) ?? str(errorRecord?.message);
-  if (code === "UNAUTHORIZED_NO_AUTH_HEADER") {
-    return new Error("Функция отката развёрнута с обязательной JWT-проверкой на gateway. Передеплойте restore-course-version с --no-verify-jwt или через supabase/config.toml, потому что авторизация уже проверяется внутри функции.");
+  if (message || code) {
+    return new Error(toUserErrorMessage({ code, message }, "Не удалось восстановить версию. Попробуйте ещё раз."));
   }
-  if (code === "INVALID_INPUT" && message?.toLowerCase().includes("метод")) {
-    return new Error("Функция отката получила не POST-запрос. Установите свежую сборку фронта и передеплойте restore-course-version из текущего архива.");
-  }
-  if (message && code) return new Error(`${message} (${code})`);
-  return new Error(message ?? "Не удалось выполнить запрос");
+  return new Error("Не удалось восстановить версию. Попробуйте ещё раз.");
 }
 
 function mapCourseVersionRow(row: unknown, courseId: string, currentVersionId: string | null): CourseVersionListItem {
@@ -447,7 +443,7 @@ export async function getCourseVersions(courseId: string): Promise<CourseVersion
     .eq("id", courseId)
     .maybeSingle();
 
-  if (courseError) throw new Error(courseError.message);
+  if (courseError) throw new Error(toUserErrorMessage(courseError, "Не удалось загрузить версии. Попробуйте ещё раз."));
 
   const { data, error } = await supabase
     .from("course_versions")
@@ -455,7 +451,7 @@ export async function getCourseVersions(courseId: string): Promise<CourseVersion
     .eq("course_id", courseId)
     .order("version_number", { ascending: false });
 
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(toUserErrorMessage(error, "Не удалось загрузить версии. Попробуйте ещё раз."));
 
   const currentVersionId = str(asRecord(course)?.current_version_id);
   return (data ?? []).map((row) => mapCourseVersionRow(row, courseId, currentVersionId ?? null));
@@ -468,7 +464,7 @@ export async function getCourseVersion(courseId: string, versionId: string): Pro
     .eq("id", courseId)
     .maybeSingle();
 
-  if (courseError) throw new Error(courseError.message);
+  if (courseError) throw new Error(toUserErrorMessage(courseError, "Не удалось загрузить версии. Попробуйте ещё раз."));
 
   const { data, error } = await supabase
     .from("course_versions")
@@ -477,8 +473,8 @@ export async function getCourseVersion(courseId: string, versionId: string): Pro
     .eq("id", versionId)
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Версия не найдена");
+  if (error) throw new Error(toUserErrorMessage(error, "Не удалось загрузить версии. Попробуйте ещё раз."));
+  if (!data) throw new Error("Версия не найдена.");
 
   const currentVersionId = str(asRecord(course)?.current_version_id);
   return {
@@ -495,7 +491,7 @@ export async function restoreCourseVersion(courseId: string, versionId: string):
   }
 
   const accessToken = sessionData.session?.access_token;
-  if (!accessToken) throw new Error("Войдите в аккаунт и повторите действие");
+  if (!accessToken) throw new Error("Войдите в систему.");
 
   // Важно: не передавать одновременно Authorization и authorization.
   // Fetch объединяет одноимённые заголовки без учёта регистра в строку

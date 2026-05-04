@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardList, History, RotateCcw, XCircle } from "lucide-react";
 import { formatRuDateTime } from "@/lib/dateFormat";
+import { toast } from "sonner";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 import {
   submitQuizAttempt,
   type QuizAttemptHistoryItem,
@@ -136,6 +138,7 @@ export default function QuizPanel({ payload, backHref, onAttemptSaved }: Props) 
     if (submitting) return;
     if (!allAnswered) {
       setError("Ответьте на все вопросы перед отправкой.");
+      toast.error("Ответьте на все вопросы перед отправкой.");
       return;
     }
     setSubmitting(true);
@@ -147,11 +150,14 @@ export default function QuizPanel({ payload, backHref, onAttemptSaved }: Props) 
     setSubmitting(false);
 
     if (response.error || !response.data) {
-      setError(response.error ?? "Не удалось сохранить результат. Попробуйте ещё раз.");
+      const message = toUserErrorMessage(response.error, "Не удалось сохранить результат. Попробуйте ещё раз.");
+      setError(message);
+      toast.error(message);
       return;
     }
 
     setResult(response.data);
+    toast.success("Квиз отправлен");
     const attempt = response.data.attempt;
     if (attempt?.id) {
       const normalizedAttempt: QuizAttemptHistoryItem = {

@@ -10,6 +10,7 @@ import { lessonContentRowHasContent } from "@/entities/course/lessonContentJson"
 import type { DashboardCourse } from "@/entities/course/readModels";
 import { formatRuDate, formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 export type { DashboardCourse };
 
@@ -90,8 +91,7 @@ function compareNullableIsoDesc(a: string | null, b: string | null) {
 }
 
 function safeError(error: unknown, fallback: string): Error {
-  const message = error instanceof Error ? error.message : str(asRecord(error)?.message) ?? fallback;
-  return new Error(message || fallback);
+  return new Error(toUserErrorMessage(error, fallback));
 }
 
 export async function fetchCourseContentMetrics(courseId: string): Promise<CourseContentMetrics> {

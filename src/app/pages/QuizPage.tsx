@@ -10,7 +10,7 @@ function stateFromError(error: string | null): PageState {
   const text = (error ?? "").toLowerCase();
   if (!text) return "ready";
   if (text.includes("нет доступа") || text.includes("forbidden")) return "forbidden";
-  if (text.includes("не найден") || text.includes("not_found") || text.includes("quiz_not_found")) return "empty";
+  if (text.includes("не найден") || text.includes("not_found") || text.includes("quiz_not_found")) return "not_found";
   return "error";
 }
 

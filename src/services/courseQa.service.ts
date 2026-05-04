@@ -6,6 +6,7 @@ import type { QaCategoryView, QaIssueView } from "@/entities/course/readModels";
 import { formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
 import { toCourseVersionChangeLabel } from "@/services/courseVersion.service";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 export type { QaCategoryView, QaIssueView };
 
@@ -280,8 +281,7 @@ export function sanitizeQaError(error: unknown): string {
   if (code === "INVALID_INPUT") return message || "Некорректные данные для запуска QA.";
   if (code === "GENERATION_FAILED") return "Не удалось выполнить AI-проверку. Попробуйте повторить позже.";
 
-  if (!message) return "Не удалось выполнить действие с QA-отчётом.";
-  return message.split("\n")[0].replace(/^Error:\s*/i, "").trim() || "Не удалось выполнить действие с QA-отчётом.";
+  return toUserErrorMessage({ code, message }, "Не удалось выполнить действие с QA-отчётом.");
 }
 
 function normalizeQaReport(row: unknown): QaReport {
