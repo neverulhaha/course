@@ -257,23 +257,42 @@ export async function fetchPlayerCourse(
   const crow = asRecord(course);
   if (!crow) return { data: null, error: "not_found" };
 
-  const { data: modRows } = await supabase
+  const { data: modRows, error: mErr } = await supabase
     .from("modules")
     .select("id, title, position")
     .eq("course_id", courseId)
     .order("position", { ascending: true });
+  if (mErr) return { data: null, error: mErr.message };
+
+  const moduleIds = (modRows ?? []).map((m) => str(asRecord(m)?.id)).filter(Boolean) as string[];
 
   const completedIds = new Set<string>();
-  if (userId) {
-    const { data: lc } = await supabase.from("lesson_completions").select("lesson_id").eq("user_id", userId);
-    for (const r of lc ?? []) {
-      const lid = str(asRecord(r)?.lesson_id);
-      if (lid) completedIds.add(lid);
+  if (userId && moduleIds.length > 0) {
+    const { data: courseLessons } = await supabase.from("lessons").select("id").in("module_id", moduleIds);
+    const lessonIds = (courseLessons ?? []).map((l) => str(asRecord(l)?.id)).filter(Boolean) as string[];
+    if (lessonIds.length > 0) {
+      const { data: lc } = await supabase.from("lesson_completions").select("lesson_id").eq("user_id", userId).in("lesson_id", lessonIds);
+      for (const r of lc ?? []) {
+        const lid = str(asRecord(r)?.lesson_id);
+        if (lid) completedIds.add(lid);
+      }
     }
+  }
+
+  let savedLastOpenedLessonId: string | null = null;
+  if (userId) {
+    const { data: progressRow } = await supabase
+      .from("progress")
+      .select("last_opened_lesson_id, next_recommended_lesson_id")
+      .eq("course_id", courseId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    savedLastOpenedLessonId = str(asRecord(progressRow)?.last_opened_lesson_id) || str(asRecord(progressRow)?.next_recommended_lesson_id) || null;
   }
 
   const modules: PlayerCourseData["modules"] = [];
   let firstLessonId: string | null = null;
+  const orderedLessonIds: string[] = [];
 
   for (const m of modRows ?? []) {
     const mr = asRecord(m);
@@ -289,21 +308,31 @@ export async function fetchPlayerCourse(
       const lr = asRecord(l);
       const lid = str(lr?.id);
       if (!lid) continue;
+      orderedLessonIds.push(lid);
       if (!firstLessonId) firstLessonId = lid;
       lessons.push({
         id: lid,
         title: str(lr?.title) ?? "Урок",
         completed: completedIds.has(lid),
+        current: false,
       });
     }
     modules.push({ id: mid, title: str(mr?.title) ?? "Модуль", lessons });
   }
 
+  const firstNotCompleted = orderedLessonIds.find((id) => !completedIds.has(id)) ?? null;
+  const currentLessonId = savedLastOpenedLessonId && orderedLessonIds.includes(savedLastOpenedLessonId)
+    ? savedLastOpenedLessonId
+    : firstNotCompleted ?? firstLessonId ?? "";
+
   return {
     data: {
       title: str(crow.title) ?? "Курс",
-      currentLessonId: firstLessonId ?? "",
-      modules,
+      currentLessonId,
+      modules: modules.map((module) => ({
+        ...module,
+        lessons: module.lessons.map((lesson) => ({ ...lesson, current: lesson.id === currentLessonId })),
+      })),
     },
     error: null,
   };
@@ -353,13 +382,7 @@ export function lessonContentToPlayerBlocks(raw: unknown): {
       });
     }
   }
-  if (blocks.length === 0) {
-    blocks.push({
-      type: "theory",
-      title: "Урок",
-      text: "Контент урока пока не добавлен. Откройте материал в редакторе курса.",
-    });
-  }
+  // Пустые блоки не добавляем: экран прохождения покажет понятное пустое состояние.
   const rec = asRecord(raw);
   return {
     title: "",
@@ -384,7 +407,7 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
   assignmentStatus: string | null;
   error: string | null;
 }> {
-  const { data: les } = await supabase.from("lessons").select("id, title, module_id").eq("id", lessonId).maybeSingle();
+  const { data: les } = await supabase.from("lessons").select("id, title, module_id, objective, summary, estimated_duration, learning_outcome").eq("id", lessonId).maybeSingle();
   const lr = asRecord(les);
   if (!lr) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, error: "not_found" };
   const mid = str(lr.module_id);
@@ -421,7 +444,15 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
     assignmentStatus = str(asRecord((assignmentRows ?? [])[0])?.status) ?? null;
   }
 
-  return { moduleTitle, lessonTitle: str(lr.title) ?? "Урок", content, quizId, quizTitle: str(quiz?.title) ?? null, attemptsCount, bestScore, completed, assignmentStatus, error: null };
+  const contentWithLessonMeta = {
+    ...(asRecord(content) ?? {}),
+    lesson_objective: str(lr.objective) ?? null,
+    lesson_summary: str(lr.summary) ?? null,
+    lesson_estimated_duration: str(lr.estimated_duration) ?? null,
+    lesson_learning_outcome: str(lr.learning_outcome) ?? null,
+  };
+
+  return { moduleTitle, lessonTitle: str(lr.title) ?? "Урок", content: contentWithLessonMeta, quizId, quizTitle: str(quiz?.title) ?? null, attemptsCount, bestScore, completed, assignmentStatus, error: null };
 }
 
 export async function fetchQuizForTaking(quizId: string): Promise<{ title: string; questions: QuizQuestionView[]; error: string | null }> {

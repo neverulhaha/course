@@ -305,6 +305,27 @@ export function userMessageForSession(status: string, currentStep: string): stri
   return stepTitle(currentStep);
 }
 
+export function debugErrorPayload(error: unknown): Rec {
+  if (error instanceof AppError) {
+    return {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+      status: error.status,
+      details: error.details ?? {},
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+
+  return { message: String(error) };
+}
+
 export async function invokeFunction(req: Request, functionName: string, body: Rec): Promise<Rec> {
   const baseUrl = env("SUPABASE_URL").replace(/\/+$/, "");
   const authorization = req.headers.get("Authorization") ?? "";
@@ -317,14 +338,28 @@ export async function invokeFunction(req: Request, functionName: string, body: R
     },
     body: JSON.stringify(body),
   });
-  const payload = await response.json().catch(() => ({}));
+
+  const rawPayload = await response.text();
+  let payload: unknown = {};
+  try {
+    payload = rawPayload ? JSON.parse(rawPayload) : {};
+  } catch {
+    payload = {};
+  }
+
   const error = asRecord(asRecord(payload)?.error);
   if (!response.ok || error) {
     throw new AppError(
       clean(error?.code) || "GENERATION_FAILED",
       clean(error?.message) || "Не удалось выполнить этап создания курса",
       response.ok ? 500 : response.status,
-      { function_name: functionName, details: asRecord(error?.details) ?? {} },
+      {
+        function_name: functionName,
+        status: response.status,
+        status_text: response.statusText,
+        details: asRecord(error?.details) ?? {},
+        response_preview: rawPayload.slice(0, 2000),
+      },
     );
   }
   return asRecord(payload) ?? {};

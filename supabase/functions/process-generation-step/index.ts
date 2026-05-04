@@ -20,6 +20,7 @@ import {
   writeAuditLog,
   addMessage,
   stepTitle,
+  debugErrorPayload,
   type Rec,
   type GenerationDepth,
 } from "../_shared/generation-session.ts";
@@ -230,7 +231,8 @@ async function markFailed(db: Db, session: Rec, step: Rec, error: unknown): Prom
   const stepId = clean(step.id);
   const attemptCount = Number(step.attempt_count ?? 0) + 1;
   const maxAttempts = Number(step.max_attempts ?? 1);
-  const message = error instanceof Error ? error.message : "Не удалось выполнить этап";
+  const errorPayload = debugErrorPayload(error);
+  const message = clean(errorPayload.message) || "Не удалось выполнить этап";
   const finalFailure = attemptCount >= maxAttempts;
   const stepType = clean(step.step_type);
   const hardFailure = finalFailure && ["prepare_source", "generate_plan", "validate_plan", "validate_lessons", "validate_full"].includes(stepType);
@@ -239,6 +241,7 @@ async function markFailed(db: Db, session: Rec, step: Rec, error: unknown): Prom
     status: finalFailure ? "failed" : "pending",
     attempt_count: attemptCount,
     error_message: message,
+    output_json: { error: errorPayload, finalFailure },
     completed_at: finalFailure ? now() : null,
     updated_at: now(),
   }).eq("id", stepId);
@@ -250,7 +253,13 @@ async function markFailed(db: Db, session: Rec, step: Rec, error: unknown): Prom
     updated_at: now(),
   }).eq("id", sessionId);
 
-  await addMessage(db, { sessionId, stepId, role: "error", content: { message, finalFailure }, metadata: { step_type: stepType } });
+  await addMessage(db, {
+    sessionId,
+    stepId,
+    role: "error",
+    content: { message, finalFailure, error: errorPayload },
+    metadata: { step_type: stepType },
+  });
   await refreshCounters(db, sessionId, hardFailure ? null : stepType);
 }
 

@@ -1,614 +1,221 @@
-﻿import { useState, useMemo, useEffect } from "react";
-import { Link, useParams, useNavigate } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
+import {
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  ClipboardList,
+  Lock,
+  Menu,
+  PenLine,
+  Play,
+  RotateCcw,
+  X,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
   fetchPlayerCourse,
   fetchPlayerLessonPayload,
   insertLessonCompletion,
-  submitLessonAssignment,
   lessonContentToPlayerBlocks,
+  submitLessonAssignment,
 } from "@/services/coursePlayback.service";
-import { cn } from "@/app/components/ui/utils";
-import {
-  CheckCircle2,
-  Circle,
-  ChevronRight,
-  ChevronDown,
-  ArrowLeft,
-  Menu,
-  X,
-  BookOpen,
-  Clock,
-  Sparkles,
-  Code2,
-  List,
-  PenLine,
-  Play,
-} from "lucide-react";
+import { recalculateProgress } from "@/services/progress.service";
 import type { PlayerCourse, PlayerLesson } from "@/entities/course/types";
 
-/* ─── Constants ───────────────────────────────────────────── */
+type LessonBlock = ReturnType<typeof lessonContentToPlayerBlocks>["blocks"][number];
 
-const FONT = "'Montserrat', sans-serif";
-
-/* ─── Types ───────────────────────────────────────────────── */
-
-type BlockType = "theory" | "code" | "key-points" | "practice";
-
-interface ContentBlock {
-  type: BlockType;
+type LessonViewData = {
   title: string;
-  text?: string;
-  items?: string[];
-  code?: string;
-  codeCaption?: string;
-}
-
-interface LessonData {
-  title: string;
-  description: string;
+  objective: string;
+  summary: string;
   duration: string;
-  blocks: ContentBlock[];
-  nextHint: string;
+  blocks: LessonBlock[];
   hasAssignment: boolean;
   hasQuiz: boolean;
-  quizId?: string | null;
-  quizTitle?: string | null;
-  attemptsCount?: number;
-  bestScore?: number | null;
-  assignmentStatus?: string | null;
-}
-
-/* ─── Block visual config ─────────────────────────────────── */
-
-const BLOCK_CFG: Record<
-  BlockType,
-  { label: string; color: string; bg: string; icon: React.ElementType }
-> = {
-  theory:      { label: "Теория",        color: "#4A90E2", bg: "rgba(74,144,226,0.04)",  icon: BookOpen    },
-  code:        { label: "Пример кода",   color: "#9B59B6", bg: "rgba(155,89,182,0.04)",  icon: Code2       },
-  "key-points":{ label: "Ключевые идеи", color: "#2ECC71", bg: "rgba(46,204,113,0.04)",   icon: Sparkles    },
-  practice:    { label: "Практика",      color: "#F1C40F", bg: "rgba(241,196,15,0.04)",   icon: PenLine     },
+  quizId: string | null;
+  quizTitle: string | null;
+  attemptsCount: number;
+  bestScore: number | null;
+  assignmentStatus: string | null;
 };
 
-/* ─── Sidebar sub-components ──────────────────────────────── */
+type PageState = "loading" | "ready" | "not_found" | "forbidden" | "error";
 
-function ModuleHeader({
-  title,
-  expanded,
-  onClick,
-  total,
-  done,
-}: {
-  title: string; expanded: boolean; onClick: () => void; total: number; done: number;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="touch-manipulation"
-      style={{
-        width: "100%", display: "flex", alignItems: "center", gap: 8,
-        padding: "7px 14px", background: "none", border: "none",
-        cursor: "pointer", transition: "background 0.12s",
-      }}
-      onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.03)")}
-      onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "none")}
-    >
-      {expanded ? (
-        <ChevronDown style={{ width: 13, height: 13, color: "var(--gray-400)", flexShrink: 0 }} />
-      ) : (
-        <ChevronRight style={{ width: 13, height: 13, color: "var(--gray-400)", flexShrink: 0 }} />
-      )}
-      <span
-        style={{
-          flex: 1, textAlign: "left",
-          fontFamily: FONT, fontWeight: 700, fontSize: "11px",
-          color: "var(--gray-700)", letterSpacing: "0.01em",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }}
-      >
-        {title}
-      </span>
-      <span
-        style={{
-          fontFamily: FONT, fontWeight: 700, fontSize: "10px",
-          color: done === total ? "#2ECC71" : "var(--gray-400)",
-          flexShrink: 0,
-        }}
-      >
-        {done}/{total}
-      </span>
-    </button>
-  );
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-function LessonNavItem({
-  lesson,
-  isActive,
-  onClick,
-}: {
-  lesson: PlayerLesson; isActive: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="touch-manipulation"
-      style={{
-        position: "relative", width: "100%", display: "flex",
-        alignItems: "center", gap: 10,
-        padding: "7px 14px 7px 30px",
-        background: isActive ? "rgba(74,144,226,0.07)" : "none",
-        border: "none", cursor: "pointer", textAlign: "left",
-        transition: "background 0.12s",
-      }}
-      onMouseEnter={(e) => {
-        if (!isActive) (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.03)";
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) (e.currentTarget as HTMLElement).style.background = "none";
-      }}
-    >
-      {isActive && (
-        <div
-          style={{
-            position: "absolute", left: 0, top: 0, bottom: 0,
-            width: 3, borderRadius: "0 3px 3px 0",
-            background: "var(--brand-blue)",
-          }}
-        />
-      )}
-
-      {/* Status icon */}
-      {lesson.completed ? (
-        <CheckCircle2 style={{ width: 14, height: 14, flexShrink: 0, color: "#2ECC71" }} />
-      ) : isActive ? (
-        <div
-          style={{
-            width: 14, height: 14, borderRadius: "50%", flexShrink: 0,
-            background: "var(--brand-blue)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          <Play style={{ width: 7, height: 7, color: "white" }} />
-        </div>
-      ) : (
-        <Circle style={{ width: 14, height: 14, flexShrink: 0, color: "var(--gray-300)" }} />
-      )}
-
-      <span
-        style={{
-          fontFamily: FONT,
-          fontWeight: isActive ? 600 : 500,
-          fontSize: "12px",
-          color: isActive ? "var(--brand-blue)" : lesson.completed ? "var(--gray-500)" : "var(--gray-700)",
-          lineHeight: 1.4,
-          flex: 1, minWidth: 0,
-          overflow: "hidden", textOverflow: "ellipsis",
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical" as const,
-          whiteSpace: "normal",
-        }}
-      >
-        {lesson.title}
-      </span>
-    </button>
-  );
+function asString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
 }
 
-/* ─── Content block renderers ─────────────────────────────── */
+function clean(value: unknown): string {
+  return asString(value).trim();
+}
 
-function TheoryBlock({ block }: { block: ContentBlock }) {
-  const cfg = BLOCK_CFG.theory;
-  const Icon = cfg.icon;
+function courseLoadState(error: string | null): PageState {
+  const e = (error ?? "").toLowerCase();
+  if (!e) return "ready";
+  if (e.includes("forbidden") || e.includes("нет доступа")) return "forbidden";
+  if (e.includes("not_found") || e.includes("не найден")) return "not_found";
+  return "error";
+}
+
+function lessonStatusLabel(lesson: PlayerLesson, active: boolean) {
+  if (lesson.completed) return "Завершён";
+  if (active) return "Открыт";
+  return "Не начат";
+}
+
+function BlockCard({ block }: { block: LessonBlock }) {
+  const typeLabel =
+    block.type === "practice" ? "Практика" :
+    block.type === "code" ? "Пример" :
+    block.title || "Материал";
+  const content = block.text || (Array.isArray(block.items) ? block.items.join("\n") : "") || block.code || "";
+
+  if (!content.trim()) return null;
 
   return (
-    <div
-      className="rounded-xl px-4 py-4 sm:px-5 sm:py-5 sm:pr-[22px]"
-      style={{
-        background: cfg.bg,
-        borderTopWidth: 1,
-        borderRightWidth: 1,
-        borderBottomWidth: 1,
-        borderLeftWidth: 3,
-        borderTopStyle: "solid",
-        borderRightStyle: "solid",
-        borderBottomStyle: "solid",
-        borderLeftStyle: "solid",
-        borderTopColor: `${cfg.color}20`,
-        borderRightColor: `${cfg.color}20`,
-        borderBottomColor: `${cfg.color}20`,
-        borderLeftColor: cfg.color,
-        fontFamily: FONT,
-      }}
-    >
-      <div className="mb-3 flex items-center gap-2 sm:mb-3.5 sm:gap-2">
-        <Icon style={{ width: 14, height: 14, color: cfg.color, flexShrink: 0 }} />
-        <span
-          style={{
-            fontFamily: FONT, fontWeight: 800,
-            fontSize: "9px", letterSpacing: "0.1em",
-            textTransform: "uppercase", color: cfg.color,
-          }}
-        >
-          {block.title}
-        </span>
+    <section className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 shadow-sm">
+      <div className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--gray-900)]">
+        {block.type === "practice" ? <PenLine className="size-4 text-[var(--brand-blue)]" /> : <BookOpen className="size-4 text-[var(--brand-blue)]" />}
+        <span>{block.title || typeLabel}</span>
       </div>
-      {block.text && (
-        <div>
-          {block.text.split("\n\n").map((para, i) => (
-            <p
-              key={i}
-              className="text-[length:var(--text-base)] sm:text-[15px]"
-              style={{
-                fontFamily: FONT,
-                color: "var(--gray-800)", lineHeight: 1.75,
-                marginBottom: i < block.text!.split("\n\n").length - 1 ? 16 : 0,
-              }}
-            >
-              {para}
-            </p>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CodeBlock({ block }: { block: ContentBlock }) {
-  const cfg = BLOCK_CFG.code;
-  const Icon = cfg.icon;
-
-  return (
-    <div className="min-w-0" style={{ fontFamily: FONT }}>
-      <div className="mb-2.5 flex items-center gap-2">
-        <Icon style={{ width: 14, height: 14, color: cfg.color, flexShrink: 0 }} />
-        <span
-          style={{
-            fontFamily: FONT, fontWeight: 800,
-            fontSize: "9px", letterSpacing: "0.1em",
-            textTransform: "uppercase", color: cfg.color,
-          }}
-        >
-          {block.title}
-        </span>
-      </div>
-
-      {block.text && (
-        <p
-          className="mb-3 text-sm leading-relaxed text-[var(--gray-600)]"
-          style={{ fontFamily: FONT }}
-        >
-          {block.text}
-        </p>
-      )}
-
-      {block.code && (
-        <>
-          <pre
-            className="overflow-x-auto rounded-xl p-3.5 text-xs sm:p-[18px] sm:text-sm"
-            style={{
-              background: "#000000",
-              color: "#e2e8f0",
-              fontFamily: "'Fira Code', 'Cascadia Code', monospace",
-              lineHeight: 1.7,
-              margin: 0,
-            }}
-          >
-            <code>{block.code}</code>
-          </pre>
-          {block.codeCaption && (
-            <p
-              style={{
-                fontFamily: FONT, fontSize: "11.5px",
-                color: "var(--gray-400)", marginTop: 8, fontStyle: "italic",
-              }}
-            >
-              {block.codeCaption}
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function KeyPointsBlock({ block }: { block: ContentBlock }) {
-  const cfg = BLOCK_CFG["key-points"];
-  const Icon = cfg.icon;
-
-  return (
-    <div
-      className="rounded-xl px-4 py-4 sm:px-5 sm:py-5 sm:pr-[22px]"
-      style={{
-        background: cfg.bg,
-        borderTopWidth: 1,
-        borderRightWidth: 1,
-        borderBottomWidth: 1,
-        borderLeftWidth: 3,
-        borderTopStyle: "solid",
-        borderRightStyle: "solid",
-        borderBottomStyle: "solid",
-        borderLeftStyle: "solid",
-        borderTopColor: `${cfg.color}20`,
-        borderRightColor: `${cfg.color}20`,
-        borderBottomColor: `${cfg.color}20`,
-        borderLeftColor: cfg.color,
-        fontFamily: FONT,
-      }}
-    >
-      <div className="mb-3 flex items-center gap-2 sm:mb-3.5 sm:gap-2">
-        <Icon style={{ width: 14, height: 14, color: cfg.color, flexShrink: 0 }} />
-        <span
-          style={{
-            fontFamily: FONT, fontWeight: 800,
-            fontSize: "9px", letterSpacing: "0.1em",
-            textTransform: "uppercase", color: cfg.color,
-          }}
-        >
-          {block.title}
-        </span>
-      </div>
-      {block.items && (
-        <ul className="flex flex-col gap-2.5 sm:gap-2.5" style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {block.items.map((item, i) => (
-            <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <CheckCircle2
-                style={{
-                  width: 15, height: 15, flexShrink: 0,
-                  color: cfg.color, marginTop: 2,
-                }}
-              />
-              <span
-                style={{
-                  fontFamily: FONT, fontSize: "14px",
-                  color: "var(--gray-800)", lineHeight: 1.6,
-                }}
-              >
-                {item}
-              </span>
-            </li>
-          ))}
+      {block.code ? (
+        <pre className="overflow-x-auto rounded-xl bg-[var(--gray-900)] p-4 text-xs leading-relaxed text-white"><code>{block.code}</code></pre>
+      ) : Array.isArray(block.items) && block.items.length > 0 ? (
+        <ul className="space-y-2 text-sm leading-relaxed text-[var(--gray-700)]">
+          {block.items.map((item, index) => <li key={index}>• {item}</li>)}
         </ul>
+      ) : (
+        <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--gray-700)]">{content}</p>
       )}
+    </section>
+  );
+}
+
+function StatePage({ type }: { type: "not_found" | "forbidden" | "empty" | "error" }) {
+  const config = {
+    not_found: {
+      icon: AlertCircle,
+      title: "Курс не найден",
+      text: "Возможно, курс был удалён или ссылка больше не актуальна.",
+    },
+    forbidden: {
+      icon: Lock,
+      title: "Нет доступа",
+      text: "Этот курс недоступен для вашего аккаунта.",
+    },
+    empty: {
+      icon: BookOpen,
+      title: "В курсе пока нет уроков",
+      text: "Когда в курсе появятся уроки, здесь откроется режим прохождения.",
+    },
+    error: {
+      icon: AlertCircle,
+      title: "Не удалось открыть курс",
+      text: "Попробуйте обновить страницу или вернуться к списку курсов.",
+    },
+  }[type];
+  const Icon = config.icon;
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[var(--gray-50)] px-6">
+      <div className="max-w-md rounded-3xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-[var(--gray-100)] text-[var(--brand-blue)]">
+          <Icon className="size-7" />
+        </div>
+        <h1 className="text-2xl font-extrabold text-[var(--gray-900)]">{config.title}</h1>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--gray-500)]">{config.text}</p>
+        <Link to="/app" className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--brand-blue)] px-5 text-sm font-bold text-white no-underline">
+          Вернуться к моим курсам
+        </Link>
+      </div>
     </div>
   );
 }
-
-function PracticeBlock({ block }: { block: ContentBlock }) {
-  const cfg = BLOCK_CFG.practice;
-  const Icon = cfg.icon;
-
-  return (
-    <div
-      className="rounded-xl px-4 py-4 sm:px-5 sm:py-5 sm:pr-[22px]"
-      style={{
-        background: cfg.bg,
-        borderTopWidth: 1,
-        borderRightWidth: 1,
-        borderBottomWidth: 1,
-        borderLeftWidth: 3,
-        borderTopStyle: "solid",
-        borderRightStyle: "solid",
-        borderBottomStyle: "solid",
-        borderLeftStyle: "solid",
-        borderTopColor: `${cfg.color}20`,
-        borderRightColor: `${cfg.color}20`,
-        borderBottomColor: `${cfg.color}20`,
-        borderLeftColor: cfg.color,
-        fontFamily: FONT,
-      }}
-    >
-      <div className="mb-3 flex items-center gap-2 sm:mb-3.5 sm:gap-2">
-        <Icon style={{ width: 14, height: 14, color: cfg.color, flexShrink: 0 }} />
-        <span
-          style={{
-            fontFamily: FONT, fontWeight: 800,
-            fontSize: "9px", letterSpacing: "0.1em",
-            textTransform: "uppercase", color: cfg.color,
-          }}
-        >
-          {block.title}
-        </span>
-      </div>
-      {block.items && (
-        <ol className="flex flex-col gap-2 sm:gap-2" style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {block.items.map((item, i) => (
-            <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-              <span
-                style={{
-                  width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                  background: `${cfg.color}15`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontFamily: FONT, fontWeight: 800, fontSize: "10px",
-                  color: cfg.color,
-                }}
-              >
-                {i + 1}
-              </span>
-              <span
-                style={{
-                  fontFamily: FONT, fontSize: "14px",
-                  color: "var(--gray-800)", lineHeight: 1.6, paddingTop: 2,
-                }}
-              >
-                {item}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
-function BlockRenderer({ block }: { block: ContentBlock }) {
-  if (block.type === "theory")      return <TheoryBlock block={block} />;
-  if (block.type === "code")        return <CodeBlock block={block} />;
-  if (block.type === "key-points")  return <KeyPointsBlock block={block} />;
-  if (block.type === "practice")    return <PracticeBlock block={block} />;
-  return null;
-}
-
-/* ─── Activity cards ──────────────────────────────────────── */
-
-function ActivityCard({
-  title, sub, icon: Icon, color, to, onClick,
-}: {
-  title: string; sub: string; icon: React.ElementType;
-  color: string; to: string; onClick?: () => void;
-}) {
-  const Component: any = onClick ? "button" : Link;
-  const props = onClick ? { type: "button" as const, onClick } : { to };
-  return (
-    <Component
-      {...props}
-      className="flex min-h-[100px] touch-manipulation flex-col gap-2.5 rounded-xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-xs)] sm:gap-2.5 sm:p-[16px] sm:pr-[18px]"
-      style={{
-        textDecoration: "none",
-        transition: "all 0.15s",
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)";
-        (e.currentTarget as HTMLElement).style.borderColor = color + "40";
-        (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-xs)";
-        (e.currentTarget as HTMLElement).style.borderColor = "var(--border-xs)";
-        (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
-      }}
-    >
-      <div
-        style={{
-          width: 34, height: 34, borderRadius: 10,
-          background: color + "10",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        <Icon style={{ width: 17, height: 17, color }} />
-      </div>
-      <div>
-        <p style={{ fontFamily: FONT, fontWeight: 700, fontSize: "13.5px", color: "var(--gray-900)", marginBottom: 3 }}>
-          {title}
-        </p>
-        <p style={{ fontFamily: FONT, fontSize: "11.5px", color: "var(--gray-500)" }}>
-          {sub}
-        </p>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <span style={{ fontFamily: FONT, fontWeight: 700, fontSize: "12px", color }}>
-          Начать
-        </span>
-        <ChevronRight style={{ width: 13, height: 13, color }} />
-      </div>
-    </Component>
-  );
-}
-
-/* ─── Main page ───────────────────────────────────────────── */
 
 export default function CoursePlayer() {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId?: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  /** Drawer open on <lg only; desktop sidebar always visible */
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [expandedModules, setExpandedModules] = useState<string[]>([]);
-  const [completed, setCompleted] = useState(false);
-  const [playerCourse, setPlayerCourse] = useState<PlayerCourse | null>(null);
-  const [lessonData, setLessonData] = useState<LessonData | null>(null);
-  const [moduleTitleForLesson, setModuleTitleForLesson] = useState("—");
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  const [course, setCourse] = useState<PlayerCourse | null>(null);
+  const [pageState, setPageState] = useState<PageState>("loading");
+  const [lessonData, setLessonData] = useState<LessonViewData | null>(null);
+  const [moduleTitle, setModuleTitle] = useState("");
+  const [lessonLoading, setLessonLoading] = useState(false);
   const [completeBusy, setCompleteBusy] = useState(false);
   const [assignmentBusy, setAssignmentBusy] = useState(false);
-  const [playerNotice, setPlayerNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [showCompletion, setShowCompletion] = useState(false);
 
-  const allLessons = useMemo(
-    () => playerCourse?.modules.flatMap((m) => m.lessons) ?? [],
-    [playerCourse]
-  );
-
-  const activeLessonId = lessonId ?? playerCourse?.currentLessonId ?? allLessons[0]?.id ?? "";
-
-  const activeLesson = useMemo<PlayerLesson | null>(
-    () => allLessons.find((l) => l.id === activeLessonId) ?? allLessons[0] ?? null,
-    [activeLessonId, allLessons]
-  );
-
-  const activeLessonIndex = useMemo(
-    () => (activeLesson ? allLessons.findIndex((l) => l.id === activeLesson.id) : -1),
-    [activeLesson, allLessons]
-  );
-  const prevLesson = activeLessonIndex > 0 ? allLessons[activeLessonIndex - 1]! : null;
-  const nextLesson = activeLessonIndex >= 0 && activeLessonIndex < allLessons.length - 1 ? allLessons[activeLessonIndex + 1]! : null;
-
-  const lessonPos = Math.max(0, activeLessonIndex);
-
-  const completedCount = allLessons.filter((l) => l.completed).length;
-  const totalLessons = allLessons.length;
-  const progressPct = totalLessons === 0 ? 0 : Math.round((completedCount / totalLessons) * 100);
+  const modules = course?.modules ?? [];
+  const lessons = useMemo(() => modules.flatMap((module) => module.lessons), [modules]);
+  const activeLessonId = lessonId || course?.currentLessonId || lessons[0]?.id || "";
+  const activeLesson = lessons.find((lesson) => lesson.id === activeLessonId) ?? lessons[0] ?? null;
+  const activeIndex = activeLesson ? lessons.findIndex((lesson) => lesson.id === activeLesson.id) : -1;
+  const prevLesson = activeIndex > 0 ? lessons[activeIndex - 1] : null;
+  const nextLesson = activeIndex >= 0 && activeIndex < lessons.length - 1 ? lessons[activeIndex + 1] : null;
+  const completedCount = lessons.filter((lesson) => lesson.completed).length;
+  const progressPercent = lessons.length ? Math.round((completedCount / lessons.length) * 100) : 0;
+  const allCompleted = lessons.length > 0 && completedCount >= lessons.length;
 
   useEffect(() => {
     if (!courseId) {
-      setLoading(false);
+      setPageState("not_found");
       return;
     }
     let cancelled = false;
+    setPageState("loading");
     void (async () => {
       const { data, error } = await fetchPlayerCourse(courseId, user?.id ?? null);
       if (cancelled) return;
       if (error || !data) {
-        setLoadError(error ?? "not_found");
-        setLoading(false);
+        setPageState(courseLoadState(error));
         return;
       }
-      const pc: PlayerCourse = {
-        title: data.title,
-        currentLessonId: data.currentLessonId,
-        modules: data.modules.map((m) => ({
-          id: m.id,
-          title: m.title,
-          lessons: m.lessons.map((l) => ({
-            id: l.id,
-            title: l.title,
-            completed: l.completed,
-            current: l.current,
-          })),
-        })),
-      };
-      setPlayerCourse(pc);
-      setExpandedModules(data.modules.map((m) => m.id));
-      setLoading(false);
+      setCourse(data);
+      setPageState(data.modules.some((module) => module.lessons.length > 0) ? "ready" : "not_found");
+      if (!lessonId && data.currentLessonId) {
+        navigate(`/learn/${courseId}/lesson/${data.currentLessonId}`, { replace: true });
+      }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [courseId, user?.id]);
+    return () => { cancelled = true; };
+  }, [courseId, lessonId, navigate, user?.id]);
 
   useEffect(() => {
-    if (!courseId || !activeLessonId) return;
+    if (!courseId || !activeLesson?.id) return;
     let cancelled = false;
+    setLessonLoading(true);
+    setNotice(null);
     void (async () => {
-      const res = await fetchPlayerLessonPayload(courseId, activeLessonId, user?.id ?? null);
+      const res = await fetchPlayerLessonPayload(courseId, activeLesson.id, user?.id ?? null);
       if (cancelled) return;
       if (res.error) {
         setLessonData(null);
+        setPageState(courseLoadState(res.error));
+        setLessonLoading(false);
         return;
       }
+      const contentRec = asRecord(res.content);
       const mapped = lessonContentToPlayerBlocks(res.content);
-      setModuleTitleForLesson(res.moduleTitle);
-      setCompleted(Boolean(res.completed));
+      setModuleTitle(res.moduleTitle);
       setLessonData({
-        title: res.lessonTitle || mapped.title,
-        description: mapped.description,
-        duration: mapped.duration,
-        blocks: mapped.blocks as LessonData["blocks"],
-        nextHint: mapped.nextHint,
-        hasAssignment: Boolean((res.content as { practice_text?: string } | null)?.practice_text?.trim()) || mapped.hasAssignment,
+        title: res.lessonTitle || activeLesson.title,
+        objective: clean(contentRec?.lesson_objective) || mapped.description,
+        summary: clean(contentRec?.lesson_summary),
+        duration: clean(contentRec?.lesson_estimated_duration) || mapped.duration || "—",
+        blocks: mapped.blocks,
+        hasAssignment: Boolean(clean(contentRec?.practice_text)) || mapped.hasAssignment,
         hasQuiz: Boolean(res.quizId),
         quizId: res.quizId,
         quizTitle: res.quizTitle,
@@ -616,506 +223,245 @@ export default function CoursePlayer() {
         bestScore: res.bestScore,
         assignmentStatus: res.assignmentStatus,
       });
+      setLessonLoading(false);
+      void recalculateProgress(courseId, activeLesson.id);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [courseId, activeLessonId, user?.id]);
+    return () => { cancelled = true; };
+  }, [courseId, activeLesson?.id, activeLesson?.title, user?.id]);
 
-  const content: LessonData =
-    lessonData ??
-    ({
-      title: activeLesson?.title ?? "Урок",
-      description: "",
-      duration: "—",
-      blocks: [{ type: "theory", title: "Загрузка", text: "Загрузка содержимого…" }],
-      nextHint: "",
-      hasAssignment: false,
-      hasQuiz: false,
-    } as LessonData);
+  useEffect(() => {
+    if (allCompleted && !lessonId) setShowCompletion(true);
+  }, [allCompleted, lessonId]);
 
-  const go = (lesson: PlayerLesson) => {
-    setCompleted(false);
-    setMobileNavOpen(false);
+  const goToLesson = (lesson: PlayerLesson | null) => {
+    if (!lesson || !courseId) return;
+    setMobileOpen(false);
+    setShowCompletion(false);
+    setCourse((prev) => prev ? {
+      ...prev,
+      currentLessonId: lesson.id,
+      modules: prev.modules.map((module) => ({
+        ...module,
+        lessons: module.lessons.map((item) => ({ ...item, current: item.id === lesson.id })),
+      })),
+    } : prev);
+    void recalculateProgress(courseId, lesson.id);
     navigate(`/learn/${courseId}/lesson/${lesson.id}`);
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMobileNavOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  useEffect(() => {
-    if (!mobileNavOpen) return;
-    const mq = window.matchMedia("(max-width: 1023px)");
-    const sync = () => {
-      document.body.style.overflow = mq.matches ? "hidden" : "";
-    };
-    sync();
-    mq.addEventListener("change", sync);
-    return () => {
-      mq.removeEventListener("change", sync);
-      document.body.style.overflow = "";
-    };
-  }, [mobileNavOpen]);
-
-  const toggleModule = (id: string) =>
-    setExpandedModules((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-
-  const handleComplete = () => {
-    if (!courseId || !activeLessonId || completeBusy) return;
+  const markLessonCompleted = async () => {
+    if (!courseId || !activeLesson || completeBusy) return;
     setCompleteBusy(true);
-    setPlayerNotice(null);
-    void insertLessonCompletion(user?.id ?? "", activeLessonId, courseId).then((result) => {
-      if (result.error) {
-        setPlayerNotice(result.error.message);
-        return;
-      }
-      setCompleted(true);
-      setPlayerCourse((prev) => prev ? {
-        ...prev,
-        modules: prev.modules.map((module) => ({
-          ...module,
-          lessons: module.lessons.map((lesson) => lesson.id === activeLessonId ? { ...lesson, completed: true } : lesson),
-        })),
-      } : prev);
-      if (nextLesson) setTimeout(() => go(nextLesson), 600);
-    }).finally(() => setCompleteBusy(false));
+    setNotice(null);
+    const result = await insertLessonCompletion(user?.id ?? "", activeLesson.id, courseId);
+    setCompleteBusy(false);
+    if (result.error) {
+      setNotice("Не удалось завершить урок. Попробуйте ещё раз.");
+      return;
+    }
+
+    setCourse((prev) => prev ? {
+      ...prev,
+      modules: prev.modules.map((module) => ({
+        ...module,
+        lessons: module.lessons.map((lesson) => lesson.id === activeLesson.id ? { ...lesson, completed: true } : lesson),
+      })),
+    } : prev);
+    setNotice("Урок завершён.");
+
+    if (nextLesson) {
+      window.setTimeout(() => goToLesson(nextLesson), 450);
+    } else {
+      setShowCompletion(true);
+      navigate(`/learn/${courseId}`, { replace: true });
+    }
   };
 
-  const handleSubmitAssignment = () => {
-    if (!courseId || !activeLessonId || assignmentBusy) return;
+  const submitAssignment = async () => {
+    if (!courseId || !activeLesson || assignmentBusy) return;
     const text = window.prompt("Введите ответ на практическое задание", "");
-    if (text == null || !text.trim()) return;
+    if (!text?.trim()) return;
     setAssignmentBusy(true);
-    setPlayerNotice(null);
-    void submitLessonAssignment(courseId, activeLessonId, text).then((result) => {
-      if (result.error) setPlayerNotice(result.error.message);
-      else setPlayerNotice("Практическое задание отправлено.");
-    }).finally(() => setAssignmentBusy(false));
+    setNotice(null);
+    const result = await submitLessonAssignment(courseId, activeLesson.id, text);
+    setAssignmentBusy(false);
+    setNotice(result.error ? "Не удалось отправить задание. Попробуйте ещё раз." : "Практическое задание отправлено.");
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--gray-50)]" style={{ fontFamily: FONT }}>
-        <p className="text-sm text-[var(--gray-500)]">Загрузка курса…</p>
-      </div>
-    );
+  if (pageState === "loading") {
+    return <div className="flex min-h-screen items-center justify-center bg-[var(--gray-50)] text-sm font-semibold text-[var(--gray-500)]">Загрузка курса…</div>;
   }
+  if (pageState === "forbidden") return <StatePage type="forbidden" />;
+  if (pageState === "not_found") return <StatePage type="not_found" />;
+  if (pageState === "error") return <StatePage type="error" />;
+  if (!course || lessons.length === 0) return <StatePage type="empty" />;
 
-  if (loadError || !playerCourse || allLessons.length === 0) {
+  if (showCompletion && allCompleted) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[var(--gray-50)] px-6 text-center" style={{ fontFamily: FONT }}>
-        <p className="text-sm text-[var(--gray-700)]">Курс не найден или нет уроков.</p>
-        <Link to="/app" className="text-sm font-semibold text-[var(--brand-blue)]">
-          К списку курсов
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="flex min-h-screen overflow-x-hidden bg-[var(--gray-50)]"
-      style={{ fontFamily: FONT }}
-    >
-      {mobileNavOpen && (
-        <button
-          type="button"
-          aria-label="Закрыть меню курса"
-          className="fixed inset-0 z-40 bg-black/35 lg:hidden"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      )}
-
-      {/* ── LEFT: course outline ── */}
-      <aside
-        className={cn(
-          "z-50 flex h-dvh min-h-0 w-[min(100%,288px)] max-w-[92vw] flex-col overflow-hidden border-r border-[var(--border-xs)] bg-[var(--bg-surface)] shadow-xl transition-transform duration-200 ease-out",
-          "fixed left-0 top-0 lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:max-w-none lg:w-[240px] lg:translate-x-0 lg:shadow-none xl:w-[268px]",
-          mobileNavOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
-        )}
-      >
-        {/* Sidebar header */}
-        <div
-          className="flex shrink-0 flex-col gap-2 border-b border-[var(--border-xs)] px-3 pb-3.5 pt-4 sm:px-4 sm:pb-3.5 sm:pt-[18px]"
-        >
-          <div className="flex items-center justify-between gap-2 lg:hidden">
-            <span className="text-[11px] font-bold text-[var(--gray-500)]" style={{ fontFamily: FONT }}>
-              Содержание
-            </span>
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen(false)}
-              className="flex size-9 touch-manipulation items-center justify-center rounded-lg text-[var(--gray-500)] transition-colors hover:bg-[var(--gray-100)] hover:text-[var(--gray-800)]"
-              aria-label="Закрыть"
-            >
-              <X className="size-4" />
+      <div className="flex min-h-screen items-center justify-center bg-[var(--gray-50)] px-6">
+        <div className="max-w-xl rounded-[2rem] border border-[var(--border-xs)] bg-[var(--bg-surface)] p-8 text-center shadow-sm sm:p-10">
+          <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-3xl bg-emerald-50 text-emerald-500">
+            <CheckCircle2 className="size-9" />
+          </div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-[var(--gray-900)]">Курс завершён</h1>
+          <p className="mt-3 text-sm leading-relaxed text-[var(--gray-500)]">
+            Вы прошли все уроки курса. Прогресс сохранён и будет доступен в разделе обучения.
+          </p>
+          <div className="mx-auto mt-6 max-w-sm">
+            <div className="mb-2 flex items-center justify-between text-xs font-bold text-[var(--gray-500)]">
+              <span>Прогресс</span>
+              <span>100%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--gray-100)]">
+              <div className="h-full w-full rounded-full bg-emerald-500" />
+            </div>
+          </div>
+          <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+            <Link to="/app" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--brand-blue)] px-5 text-sm font-bold text-white no-underline">
+              Вернуться к моим курсам
+            </Link>
+            <button type="button" onClick={() => goToLesson(lessons[0])} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--border-sm)] bg-[var(--bg-surface)] px-5 text-sm font-bold text-[var(--gray-700)]">
+              <RotateCcw className="size-4" /> Повторить курс
             </button>
           </div>
-          <Link
-            to="/app"
-            className="mb-2 inline-flex min-h-9 touch-manipulation items-center gap-1.5 no-underline transition-colors hover:text-[var(--brand-blue)]"
-            style={{
-              fontFamily: FONT, fontWeight: 600, fontSize: "11px",
-              color: "var(--gray-400)",
-            }}
-          >
-            <ArrowLeft className="size-3 shrink-0" />
-            Все курсы
-          </Link>
+        </div>
+      </div>
+    );
+  }
 
-          <p
-            style={{
-              fontFamily: FONT, fontWeight: 800, fontSize: "13px",
-              color: "var(--gray-900)", letterSpacing: "-0.01em",
-              lineHeight: 1.35, marginBottom: 12,
-              overflow: "hidden", textOverflow: "ellipsis",
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical" as const,
-              whiteSpace: "normal",
-            }}
-          >
-            {playerCourse.title}
-          </p>
+  const lessonTitle = lessonData?.title || activeLesson?.title || "Урок";
+  const visibleBlocks = lessonData?.blocks.filter((block) => {
+    const content = block.text || (Array.isArray(block.items) ? block.items.join("\n") : "") || block.code || "";
+    return content.trim().length > 0;
+  }) ?? [];
 
-          {/* Progress */}
-          <div>
-            <div
-              style={{
-                display: "flex", alignItems: "center",
-                justifyContent: "space-between", marginBottom: 6,
-              }}
-            >
-              <span style={{ fontFamily: FONT, fontWeight: 700, fontSize: "10px", color: "var(--gray-500)" }}>
-                Прогресс
-              </span>
-              <span
-                style={{
-                  fontFamily: FONT, fontWeight: 800, fontSize: "10px",
-                  color: progressPct === 100 ? "#2ECC71" : "var(--brand-blue)",
-                }}
-              >
-                {completedCount}/{totalLessons} уроков
-              </span>
+  return (
+    <div className="min-h-screen bg-[var(--gray-50)] lg:flex">
+      {mobileOpen && <button type="button" aria-label="Закрыть оглавление" className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setMobileOpen(false)} />}
+
+      <aside className={`${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"} fixed left-0 top-0 z-40 flex h-dvh w-[min(88vw,320px)] flex-col border-r border-[var(--border-xs)] bg-[var(--bg-surface)] transition-transform lg:sticky lg:w-80`}>
+        <div className="border-b border-[var(--border-xs)] p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <Link to="/app" className="inline-flex items-center gap-2 text-xs font-bold text-[var(--gray-500)] no-underline hover:text-[var(--brand-blue)]">
+              <ArrowLeft className="size-4" /> Мои курсы
+            </Link>
+            <button type="button" className="rounded-lg p-2 text-[var(--gray-500)] lg:hidden" onClick={() => setMobileOpen(false)}><X className="size-5" /></button>
+          </div>
+          <h1 className="line-clamp-2 text-lg font-extrabold tracking-tight text-[var(--gray-900)]">{course.title}</h1>
+          <div className="mt-4">
+            <div className="mb-2 flex justify-between text-xs font-bold text-[var(--gray-500)]">
+              <span>Прогресс</span>
+              <span>{completedCount}/{lessons.length} уроков</span>
             </div>
-            <div
-              style={{
-                height: 5, borderRadius: 99,
-                background: "var(--gray-100)", overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  height: "100%", borderRadius: 99,
-                  width: `${progressPct}%`,
-                  background: progressPct === 100 ? "#2ECC71" : "var(--brand-blue)",
-                  transition: "width 0.4s ease",
-                }}
-              />
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--gray-100)]">
+              <div className="h-full rounded-full bg-[var(--brand-blue)] transition-all" style={{ width: `${progressPercent}%` }} />
             </div>
           </div>
         </div>
 
-        {/* Module/lesson list */}
-        <nav
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden py-2.5"
-        >
-          {playerCourse.modules.map((mod) => {
-            const isExpanded = expandedModules.includes(mod.id);
-            const doneLessons = mod.lessons.filter((l) => l.completed).length;
-
-            return (
-              <div key={mod.id} style={{ marginBottom: 4 }}>
-                <ModuleHeader
-                  title={mod.title}
-                  expanded={isExpanded}
-                  onClick={() => toggleModule(mod.id)}
-                  total={mod.lessons.length}
-                  done={doneLessons}
-                />
-
-                {isExpanded && (
-                  <div style={{ paddingBottom: 4 }}>
-                    {mod.lessons.map((lesson) => (
-                      <LessonNavItem
-                        key={lesson.id}
-                        lesson={lesson}
-                        isActive={lesson.id === activeLessonId}
-                        onClick={() => go(lesson)}
-                      />
-                    ))}
-                  </div>
-                )}
+        <nav className="min-h-0 flex-1 overflow-y-auto p-4">
+          {modules.map((module) => (
+            <div key={module.id} className="mb-5">
+              <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-[var(--gray-400)]">{module.title}</div>
+              <div className="space-y-1.5">
+                {module.lessons.map((lesson) => {
+                  const active = lesson.id === activeLesson?.id;
+                  return (
+                    <button
+                      type="button"
+                      key={lesson.id}
+                      onClick={() => goToLesson(lesson)}
+                      className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition ${active ? "bg-[var(--brand-blue)]/10" : "hover:bg-[var(--gray-50)]"}`}
+                    >
+                      <span className="mt-0.5 shrink-0">
+                        {lesson.completed ? <CheckCircle2 className="size-5 text-emerald-500" /> : active ? <Play className="size-5 text-[var(--brand-blue)]" /> : <Circle className="size-5 text-[var(--gray-300)]" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`block text-sm font-bold leading-snug ${active ? "text-[var(--brand-blue)]" : "text-[var(--gray-800)]"}`}>{lesson.title}</span>
+                        <span className="mt-1 block text-xs font-semibold text-[var(--gray-400)]">{lessonStatusLabel(lesson, active)}</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </nav>
       </aside>
 
-      {/* ── RIGHT: MAIN CONTENT ── */}
-      <main className="min-h-dvh min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--bg-surface)]">
-        {/* Thin top progress stripe */}
-        <div className="h-0.5 bg-[var(--gray-100)]">
-          <div
-            style={{
-              height: "100%",
-              width: `${totalLessons ? ((lessonPos + 1) / totalLessons) * 100 : 0}%`,
-              background: "var(--brand-blue)",
-              transition: "width 0.4s ease",
-            }}
-          />
-        </div>
-
-        {/* Toolbar */}
-        <div
-          className="sticky top-0 z-10 flex flex-col gap-3 border-b border-[var(--border-xs)] bg-[var(--bg-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-2.5 lg:h-[52px] lg:px-8 lg:py-0"
-        >
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen(true)}
-              className="flex size-9 shrink-0 touch-manipulation items-center justify-center rounded-lg border-none text-[var(--gray-400)] transition-colors hover:bg-[var(--gray-100)] hover:text-[var(--gray-700)] lg:hidden"
-              aria-label="Открыть содержание курса"
-            >
-              <Menu className="size-4" />
-            </button>
-
-            <span
-              className="min-w-0 text-[11px] text-[var(--gray-400)] sm:text-xs"
-              style={{ fontFamily: FONT }}
-            >
-              <span className="block sm:inline">
-                Урок {lessonPos + 1} из {totalLessons}
-              </span>
-              {content.duration && (
-                <span className="mt-0.5 flex items-center gap-1 sm:ml-2.5 sm:mt-0 sm:inline-flex">
-                  <Clock className="size-2.5 shrink-0 sm:size-[11px]" />
-                  {content.duration}
-                </span>
-              )}
-            </span>
-          </div>
-
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-2">
-            {prevLesson && (
-              <button
-                type="button"
-                onClick={() => go(prevLesson)}
-                className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1 rounded-lg border border-[var(--border-sm)] bg-[var(--bg-surface)] px-3 py-2.5 text-xs font-semibold text-[var(--gray-600)] sm:min-h-0 sm:w-auto sm:px-3 sm:py-1.5 sm:text-xs"
-                style={{ fontFamily: FONT, cursor: "pointer", transition: "all 0.12s" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--brand-blue)";
-                  e.currentTarget.style.color = "var(--brand-blue)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "var(--border-sm)";
-                  e.currentTarget.style.color = "var(--gray-600)";
-                }}
-              >
-                ← Назад
+      <main className="min-w-0 flex-1">
+        <header className="sticky top-0 z-20 border-b border-[var(--border-xs)] bg-[var(--bg-surface)]/95 px-4 py-3 backdrop-blur lg:px-8">
+          <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <button type="button" className="rounded-xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Открыть оглавление">
+                <Menu className="size-5" />
               </button>
-            )}
-
-            {nextLesson ? (
-              <button
-                type="button"
-                onClick={handleComplete}
-                className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg border-none px-4 py-2.5 text-xs font-bold text-white sm:min-h-0 sm:w-auto sm:px-4 sm:py-1.5 sm:text-xs"
-                style={{
-                  fontFamily: FONT,
-                  background: completed ? "#2ECC71" : "var(--brand-blue)",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
-              >
-                {completed ? (
-                  <><CheckCircle2 className="size-3.5 shrink-0" />Готово</>
-                ) : (
-                  <>Далее <ChevronRight className="size-3.5 shrink-0" /></>
-                )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleComplete}
-                className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg border-none px-4 py-2.5 text-xs font-bold text-white sm:min-h-0 sm:w-auto sm:px-4 sm:py-1.5 sm:text-xs"
-                style={{
-                  fontFamily: FONT,
-                  background: completed ? "#2ECC71" : "var(--brand-blue)",
-                  cursor: "pointer", transition: "all 0.2s",
-                }}
-              >
-                <CheckCircle2 className="size-3.5 shrink-0" />
-                {completed ? "Завершено!" : "Завершить курс"}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Lesson content */}
-        <div className="mx-auto max-w-[720px] px-4 pb-20 pt-8 sm:px-6 sm:pb-24 sm:pt-10 lg:px-10 lg:pb-20 lg:pt-12 xl:px-10">
-          {/* Lesson header */}
-          <div className="mb-8 sm:mb-9 lg:mb-10">
-            <div
-              className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 sm:mb-4"
-              style={{ background: "rgba(74,144,226,0.07)" }}
-            >
-              <BookOpen style={{ width: 12, height: 12, color: "var(--brand-blue)" }} />
-              <span
-                style={{
-                  fontFamily: FONT, fontWeight: 700, fontSize: "11px",
-                  color: "var(--brand-blue)",
-                }}
-              >
-                {moduleTitleForLesson}
-              </span>
-            </div>
-
-            <h1
-              className="mb-2.5 text-2xl font-extrabold leading-tight tracking-tight text-[var(--gray-900)] sm:mb-3 sm:text-3xl lg:text-[30px]"
-              style={{ fontFamily: FONT }}
-            >
-              {content.title}
-            </h1>
-
-            <p
-              className="text-sm leading-relaxed text-[var(--gray-500)] sm:text-[15px]"
-              style={{ fontFamily: FONT }}
-            >
-              {content.description}
-            </p>
-          </div>
-
-          {/* Content blocks */}
-          {playerNotice && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              {playerNotice}
-            </div>
-          )}
-
-          <div className="flex flex-col gap-4 sm:gap-5">
-            {content.blocks.map((block, i) => (
-              <BlockRenderer key={i} block={block} />
-            ))}
-          </div>
-
-          {/* Next hint */}
-          {content.nextHint && (
-            <div
-              className="mt-6 flex items-start gap-2.5 rounded-xl border border-[var(--border-xs)] bg-[var(--gray-50)] p-3.5 sm:mt-7 sm:gap-2.5 sm:p-4 sm:pr-[18px]"
-            >
-              <Sparkles style={{ width: 14, height: 14, color: "var(--gray-400)", flexShrink: 0, marginTop: 2 }} />
-              <p
-                style={{
-                  fontFamily: FONT, fontSize: "13.5px",
-                  color: "var(--gray-500)", fontStyle: "italic", lineHeight: 1.6,
-                }}
-              >
-                {content.nextHint}
-              </p>
-            </div>
-          )}
-
-          {/* Activities */}
-          {(content.hasAssignment || content.hasQuiz) && (
-            <div className="mt-8 sm:mt-10">
-              <p
-                className="mb-3 text-[9px] font-extrabold uppercase tracking-widest text-[var(--gray-400)] sm:mb-3.5"
-                style={{ fontFamily: FONT }}
-              >
-                Закрепление материала
-              </p>
-              <div
-                className={`grid gap-3 sm:gap-3 ${content.hasAssignment && content.hasQuiz ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
-              >
-                {content.hasAssignment && (
-                  <ActivityCard
-                    title="Практическое задание"
-                    sub={content.assignmentStatus ? "Ответ отправлен" : assignmentBusy ? "Отправка…" : "Закрепите знания на практике"}
-                    icon={PenLine}
-                    color="#F1C40F"
-                    to="#"
-                    onClick={handleSubmitAssignment}
-                  />
-                )}
-                {content.hasQuiz && (
-                  <ActivityCard
-                    title="Проверка знаний"
-                    sub={content.bestScore != null ? `Лучший результат: ${content.bestScore}%` : content.attemptsCount ? `Попыток: ${content.attemptsCount}` : "Ответьте на вопросы по теме"}
-                    icon={List}
-                    color="var(--brand-blue)"
-                    to={content.quizId ? `/learn/${courseId}/quiz/${content.quizId}` : `/learn/${courseId}`}
-                  />
-                )}
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-[var(--gray-400)]">Урок {activeIndex + 1} из {lessons.length}</p>
+                <p className="truncate text-sm font-extrabold text-[var(--gray-900)]">{lessonTitle}</p>
               </div>
             </div>
+            <div className="hidden items-center gap-2 sm:flex">
+              <button type="button" disabled={!prevLesson || completeBusy} onClick={() => goToLesson(prevLesson)} className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--border-sm)] bg-[var(--bg-surface)] px-3 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft className="size-4" />Назад</button>
+              <button type="button" disabled={completeBusy || activeLesson?.completed} onClick={markLessonCompleted} className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-[var(--brand-blue)] px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">
+                <CheckCircle2 className="size-4" />{completeBusy ? "Сохраняем…" : activeLesson?.completed ? "Завершён" : "Завершить урок"}
+              </button>
+              <button type="button" disabled={!nextLesson || completeBusy} onClick={() => goToLesson(nextLesson)} className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-[var(--border-sm)] bg-[var(--bg-surface)] px-3 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40">Далее<ChevronRight className="size-4" /></button>
+            </div>
+          </div>
+        </header>
+
+        <div className="mx-auto max-w-4xl px-4 py-8 lg:px-8 lg:py-10">
+          {notice && <div className="mb-5 rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] px-4 py-3 text-sm font-bold text-[var(--gray-700)] shadow-sm">{notice}</div>}
+
+          <section className="mb-7 rounded-[2rem] border border-[var(--border-xs)] bg-[var(--bg-surface)] p-6 shadow-sm sm:p-8">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-xl bg-[var(--brand-blue)]/10 px-3 py-1.5 text-xs font-bold text-[var(--brand-blue)]">
+              <BookOpen className="size-4" /> {moduleTitle || "Урок курса"}
+            </div>
+            <h2 className="text-3xl font-extrabold tracking-tight text-[var(--gray-900)]">{lessonTitle}</h2>
+            {lessonData?.objective && <p className="mt-4 text-sm leading-relaxed text-[var(--gray-700)]"><strong>Цель:</strong> {lessonData.objective}</p>}
+            {lessonData?.summary && <p className="mt-2 text-sm leading-relaxed text-[var(--gray-500)]">{lessonData.summary}</p>}
+            {lessonData?.duration && <p className="mt-4 text-xs font-bold text-[var(--gray-400)]">Длительность: {lessonData.duration}</p>}
+          </section>
+
+          {lessonLoading ? (
+            <div className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-6 text-sm font-semibold text-[var(--gray-500)]">Загрузка урока…</div>
+          ) : visibleBlocks.length > 0 ? (
+            <div className="space-y-4">
+              {visibleBlocks.map((block, index) => <BlockCard key={`${block.title}-${index}`} block={block} />)}
+            </div>
+          ) : (
+            <div className="rounded-[2rem] border border-dashed border-[var(--border-sm)] bg-[var(--bg-surface)] p-8 text-center">
+              <ClipboardList className="mx-auto mb-4 size-10 text-[var(--gray-300)]" />
+              <h3 className="text-lg font-extrabold text-[var(--gray-900)]">Содержание урока ещё не создано</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--gray-500)]">Материалы появятся здесь после наполнения курса.</p>
+            </div>
           )}
 
-          {/* Bottom navigation */}
-          <div className="mt-12 flex flex-col-reverse gap-3 border-t border-[var(--border-xs)] pt-6 sm:mt-14 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pt-6">
-            {prevLesson ? (
-              <button
-                type="button"
-                onClick={() => go(prevLesson)}
-                className="inline-flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-[10px] border border-[var(--border-sm)] bg-[var(--bg-surface)] px-4 py-3 text-sm font-semibold text-[var(--gray-600)] sm:min-h-0 sm:w-auto sm:max-w-[min(100%,320px)] sm:px-[18px] sm:py-2.5 sm:text-[13px]"
-                style={{ fontFamily: FONT, cursor: "pointer", transition: "all 0.12s" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--brand-blue)";
-                  e.currentTarget.style.color = "var(--brand-blue)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "var(--border-sm)";
-                  e.currentTarget.style.color = "var(--gray-600)";
-                }}
-              >
-                <span className="max-w-full truncate">
-                  ← {prevLesson.title.length > 28 ? prevLesson.title.slice(0, 28) + "…" : prevLesson.title}
-                </span>
-              </button>
-            ) : null}
+          {(lessonData?.hasAssignment || lessonData?.hasQuiz) && (
+            <section className="mt-6 grid gap-3 sm:grid-cols-2">
+              {lessonData?.hasAssignment && (
+                <button type="button" disabled={assignmentBusy} onClick={submitAssignment} className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 text-left shadow-sm disabled:opacity-60">
+                  <PenLine className="mb-3 size-5 text-[var(--brand-blue)]" />
+                  <p className="font-extrabold text-[var(--gray-900)]">Практическое задание</p>
+                  <p className="mt-1 text-sm text-[var(--gray-500)]">{lessonData.assignmentStatus ? "Ответ отправлен" : assignmentBusy ? "Отправка…" : "Отправьте ответ по заданию"}</p>
+                </button>
+              )}
+              {lessonData?.hasQuiz && lessonData.quizId && (
+                <Link to={`/learn/${courseId}/quiz/${lessonData.quizId}`} className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 text-left no-underline shadow-sm">
+                  <ClipboardList className="mb-3 size-5 text-[var(--brand-blue)]" />
+                  <p className="font-extrabold text-[var(--gray-900)]">Проверка знаний</p>
+                  <p className="mt-1 text-sm text-[var(--gray-500)]">{lessonData.bestScore != null ? `Лучший результат: ${lessonData.bestScore}%` : lessonData.attemptsCount ? `Попыток: ${lessonData.attemptsCount}` : "Пройти вопросы по уроку"}</p>
+                </Link>
+              )}
+            </section>
+          )}
 
-            {nextLesson ? (
-              <button
-                type="button"
-                onClick={handleComplete}
-                className="inline-flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-[10px] border-none px-4 py-3 text-sm font-bold text-white shadow-[0_2px_8px_rgba(74,144,226,0.25)] sm:min-h-0 sm:w-auto sm:px-5 sm:py-2.5 sm:text-[13px]"
-                style={{
-                  fontFamily: FONT,
-                  background: completed ? "#2ECC71" : "var(--brand-blue)",
-                  cursor: "pointer", transition: "all 0.2s",
-                }}
-              >
-                {completed ? (
-                  <><CheckCircle2 className="size-4 shrink-0" />Урок завершён</>
-                ) : (
-                  <span className="max-w-full truncate">
-                    {nextLesson.title.length > 28 ? nextLesson.title.slice(0, 28) + "…" : nextLesson.title} →
-                  </span>
-                )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleComplete}
-                className="inline-flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-[10px] border-none px-4 py-3 text-sm font-bold text-white shadow-[0_2px_8px_rgba(74,144,226,0.25)] sm:min-h-0 sm:w-auto sm:px-5 sm:py-2.5 sm:text-[13px]"
-                style={{
-                  fontFamily: FONT,
-                  background: completed ? "#2ECC71" : "var(--brand-blue)",
-                  cursor: "pointer", transition: "all 0.2s",
-                }}
-              >
-                <CheckCircle2 className="size-4 shrink-0" />
-                {completed ? "Курс завершён!" : "Завершить курс"}
-              </button>
-            )}
-          </div>
+          <footer className="mt-8 flex flex-col gap-3 border-t border-[var(--border-xs)] pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" disabled={!prevLesson || completeBusy} onClick={() => goToLesson(prevLesson)} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[var(--border-sm)] bg-[var(--bg-surface)] px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft className="size-4" />Назад</button>
+            <button type="button" disabled={completeBusy || activeLesson?.completed} onClick={markLessonCompleted} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--brand-blue)] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"><CheckCircle2 className="size-4" />{completeBusy ? "Сохраняем…" : activeLesson?.completed ? "Урок завершён" : "Завершить урок"}</button>
+            <button type="button" disabled={!nextLesson || completeBusy} onClick={() => goToLesson(nextLesson)} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[var(--border-sm)] bg-[var(--bg-surface)] px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40">Далее<ChevronRight className="size-4" /></button>
+          </footer>
         </div>
       </main>
     </div>

@@ -180,6 +180,44 @@ async function saveGenerationMessage(
   if (error) console.warn("generation message insert failed", error.message);
 }
 
+function debugErrorPayload(error: unknown): Rec {
+  if (error instanceof AppError) {
+    return {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+      status: error.status,
+      details: error.details ?? {},
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+
+  return { message: String(error) };
+}
+
+function safeAsciiHeader(value: unknown, fallback: string): string {
+  const raw = clean(value) || fallback;
+  const ascii = raw.replace(/[^\x20-\x7E]/g, "").trim();
+  return ascii || fallback;
+}
+
+function safeReferer(value: unknown): string {
+  const ascii = safeAsciiHeader(value, "https://course-rosy.vercel.app");
+  try {
+    const url = new URL(ascii);
+    if (url.protocol === "http:" || url.protocol === "https:") return url.toString();
+  } catch {
+    // ignore invalid custom value
+  }
+  return "https://course-rosy.vercel.app";
+}
+
 async function callAiWithTrace(
   db: SupabaseClient,
   trace: AiTrace | null,
@@ -198,9 +236,10 @@ async function callAiWithTrace(
     await saveGenerationMessage(db, trace, "ai_response", parsed, { model: AI_MODEL, provider: AI_PROVIDER });
     return parsed;
   } catch (error) {
-    await saveGenerationMessage(db, trace, "ai_error", {
-      message: error instanceof Error ? error.message : String(error),
-    }, { model: AI_MODEL, provider: AI_PROVIDER });
+    await saveGenerationMessage(db, trace, "ai_error", debugErrorPayload(error), {
+      model: AI_MODEL,
+      provider: AI_PROVIDER,
+    });
     throw error;
   }
 }
@@ -448,8 +487,8 @@ async function callAi(systemPrompt: string, userPrompt: string): Promise<unknown
   };
 
   if (AI_PROVIDER === "openrouter") {
-    headers["HTTP-Referer"] = Deno.env.get("OPENROUTER_SITE_URL")?.trim() || "https://course-rosy.vercel.app";
-    headers["X-Title"] = Deno.env.get("OPENROUTER_APP_NAME")?.trim() || "Diplom Course Generator";
+    headers["HTTP-Referer"] = safeReferer(Deno.env.get("OPENROUTER_SITE_URL"));
+    headers["X-Title"] = safeAsciiHeader(Deno.env.get("OPENROUTER_APP_NAME"), "CourseGenerator");
   }
 
   async function requestJson(useResponseFormat: boolean): Promise<unknown> {
@@ -470,14 +509,30 @@ async function callAi(systemPrompt: string, userPrompt: string): Promise<unknown
       body: JSON.stringify(body),
     });
 
-    const json = await response.json().catch(() => null);
+    const rawResponse = await response.text();
+    let json: unknown = null;
+    try {
+      json = rawResponse ? JSON.parse(rawResponse) : null;
+    } catch {
+      json = null;
+    }
+
     if (!response.ok) {
-      const err = asRecord(asRecord(json)?.error);
+      const payload = asRecord(json);
+      const err = asRecord(payload?.error);
+      const providerMessage = clean(err?.message) || clean(payload?.message) || rawResponse.slice(0, 1000) || "AI API error";
       throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, {
         status: response.status,
-        message: clean(err?.message) || "AI API error",
-        type: clean(err?.type) || null,
+        status_text: response.statusText,
+        provider_message: providerMessage,
+        provider_code: clean(err?.code) || clean(payload?.code) || null,
+        provider_type: clean(err?.type) || clean(payload?.type) || null,
+        provider_param: clean(err?.param) || null,
         used_response_format: useResponseFormat,
+        model: AI_MODEL,
+        provider: AI_PROVIDER,
+        base_url: AI_BASE_URL,
+        response_preview: rawResponse.slice(0, 2000),
       });
     }
 
