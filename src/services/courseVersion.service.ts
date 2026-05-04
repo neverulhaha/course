@@ -331,6 +331,53 @@ export type CourseSnapshotView = {
   sources?: unknown[];
 };
 
+export type CourseVersionSnapshotStatus = {
+  restorable: boolean;
+  reason: string | null;
+};
+
+export function normalizeCourseVersionSnapshot(value: unknown): CourseSnapshotView {
+  const root = asRecord(value);
+  const wrapped = asRecord(root?.snapshot_data) ?? asRecord(root?.snapshot) ?? asRecord(root?.data) ?? root ?? {};
+  const lessonContents = Array.isArray(wrapped.lesson_contents)
+    ? wrapped.lesson_contents
+    : Array.isArray(wrapped.lessonContents)
+      ? wrapped.lessonContents
+      : [];
+  const answerOptions = Array.isArray(wrapped.answer_options)
+    ? wrapped.answer_options
+    : Array.isArray(wrapped.answerOptions)
+      ? wrapped.answerOptions
+      : [];
+
+  return {
+    schema_version: num(wrapped.schema_version ?? wrapped.schemaVersion) ?? undefined,
+    captured_at: str(wrapped.captured_at ?? wrapped.capturedAt) ?? undefined,
+    course: asRecord(wrapped.course),
+    modules: Array.isArray(wrapped.modules) ? wrapped.modules : [],
+    lessons: Array.isArray(wrapped.lessons) ? wrapped.lessons : [],
+    lesson_contents: lessonContents,
+    sources: Array.isArray(wrapped.sources) ? wrapped.sources : [],
+    quizzes: Array.isArray(wrapped.quizzes) ? wrapped.quizzes : [],
+    questions: Array.isArray(wrapped.questions) ? wrapped.questions : [],
+    answer_options: answerOptions,
+  };
+}
+
+export function getCourseVersionSnapshotStatus(value: unknown): CourseVersionSnapshotStatus {
+  const snapshot = normalizeCourseVersionSnapshot(value);
+  if (!snapshot.course) {
+    return { restorable: false, reason: "В снимке версии нет данных курса." };
+  }
+  if ((snapshot.modules?.length ?? 0) === 0 || (snapshot.lessons?.length ?? 0) === 0) {
+    return {
+      restorable: false,
+      reason: "В этой версии не сохранена структура курса. Скорее всего, снимок был создан до генерации плана.",
+    };
+  }
+  return { restorable: true, reason: null };
+}
+
 export type CourseVersionDetails = CourseVersionListItem & {
   snapshot_data: CourseSnapshotView | null;
 };
@@ -365,7 +412,12 @@ async function parseEdgeFunctionError(error: unknown): Promise<Error> {
 
   const errorRecord = asRecord(error);
   const payload = asRecord(errorRecord?.error);
+  const code = str(payload?.code);
   const message = str(payload?.message) ?? str(errorRecord?.message);
+  if (code === "UNAUTHORIZED_NO_AUTH_HEADER") {
+    return new Error("Сессия не передалась в функцию отката. Обновите страницу, войдите заново и повторите действие.");
+  }
+  if (message && code) return new Error(`${message} (${code})`);
   return new Error(message ?? "Не удалось выполнить запрос");
 }
 
@@ -428,22 +480,37 @@ export async function getCourseVersion(courseId: string, versionId: string): Pro
   const currentVersionId = str(asRecord(course)?.current_version_id);
   return {
     ...mapCourseVersionRow(data, courseId, currentVersionId ?? null),
-    snapshot_data: (asRecord(data)?.snapshot_data as CourseSnapshotView | null | undefined) ?? null,
+    snapshot_data: normalizeCourseVersionSnapshot(asRecord(data)?.snapshot_data),
   };
 }
 
 export async function restoreCourseVersion(courseId: string, versionId: string): Promise<RestoreCourseVersionResult> {
-  const { data: sessionData } = await supabase.auth.getSession();
+  let { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session?.access_token) {
+    const refreshed = await supabase.auth.refreshSession();
+    sessionData = refreshed.data;
+  }
+
   const accessToken = sessionData.session?.access_token;
   if (!accessToken) throw new Error("Войдите в аккаунт и повторите действие");
 
-  const { data, error } = await supabase.functions.invoke<RestoreCourseVersionResult | { error: unknown }>("restore-course-version", {
-    body: { course_id: courseId, version_id: versionId },
-    headers: { Authorization: `Bearer ${accessToken}` },
+  const response = await fetch(`${__SUPABASE_URL__.replace(/\/+$/, "")}/functions/v1/restore-course-version`, {
+    method: "POST",
+    headers: {
+      apikey: __SUPABASE_ANON_KEY__,
+      Authorization: `Bearer ${accessToken}`,
+      authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "x-client-info": "course-ai-generator-web",
+    },
+    body: JSON.stringify({ course_id: courseId, version_id: versionId }),
   });
 
-  if (error) throw await parseEdgeFunctionError(error);
-  const backendError = asRecord(data)?.error;
-  if (backendError) throw await parseEdgeFunctionError({ error: backendError });
-  return (data as RestoreCourseVersionResult) ?? {};
+  const payload = await response.json().catch(() => ({}));
+  const backendError = asRecord(payload)?.error;
+  if (!response.ok || backendError) {
+    throw await parseEdgeFunctionError({ error: backendError ?? { message: response.statusText } });
+  }
+
+  return (payload as RestoreCourseVersionResult) ?? {};
 }

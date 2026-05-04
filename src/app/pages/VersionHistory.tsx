@@ -7,6 +7,8 @@ import {
   getCourseVersions,
   restoreCourseVersion,
   toCourseVersionChangeLabel,
+  getCourseVersionSnapshotStatus,
+  normalizeCourseVersionSnapshot,
   type CourseSnapshotView,
   type CourseVersionDetails,
   type CourseVersionListItem,
@@ -22,18 +24,9 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function asSnapshot(value: unknown): CourseSnapshotView {
-  const record = value && typeof value === "object" && !Array.isArray(value) ? (value as CourseSnapshotView) : {};
-  return {
-    ...record,
-    modules: Array.isArray(record.modules) ? record.modules : [],
-    lessons: Array.isArray(record.lessons) ? record.lessons : [],
-    lesson_contents: Array.isArray(record.lesson_contents) ? record.lesson_contents : [],
-    sources: Array.isArray(record.sources) ? record.sources : [],
-    quizzes: Array.isArray(record.quizzes) ? record.quizzes : [],
-    questions: Array.isArray(record.questions) ? record.questions : [],
-    answer_options: Array.isArray(record.answer_options) ? record.answer_options : [],
-  };
+  return normalizeCourseVersionSnapshot(value);
 }
+
 
 function getSnapshotTitle(snapshot: CourseSnapshotView) {
   const course = snapshot.course;
@@ -53,7 +46,7 @@ export default function VersionHistoryPage() {
   const courseId = useCourseId();
   const [versions, setVersions] = useState<CourseVersionListItem[]>([]);
   const [selected, setSelected] = useState<CourseVersionDetails | null>(null);
-  const [restoreTarget, setRestoreTarget] = useState<CourseVersionListItem | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<CourseVersionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailsLoadingId, setDetailsLoadingId] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -103,6 +96,31 @@ export default function VersionHistoryPage() {
       setDetailsLoadingId(null);
     }
   }
+
+  async function prepareRestore(versionId: string) {
+    if (!courseId || detailsLoadingId || restoringId) return;
+    setDetailsLoadingId(versionId);
+    setError(null);
+    try {
+      const version = await getCourseVersion(courseId, versionId);
+      setSelected(version);
+      const status = getCourseVersionSnapshotStatus(version.snapshot_data);
+      if (!status.restorable) {
+        const message = status.reason ?? "Эту версию нельзя восстановить: снимок неполный.";
+        setError(message);
+        toast.error(message);
+        return;
+      }
+      setRestoreTarget(version);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Не удалось подготовить восстановление версии";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setDetailsLoadingId(null);
+    }
+  }
+
 
   async function confirmRestore() {
     if (!courseId || !restoreTarget || restoringId) return;
@@ -166,7 +184,7 @@ export default function VersionHistoryPage() {
                   restoring={restoringId === version.id}
                   disabled={Boolean(restoringId)}
                   onOpen={() => void openVersion(version.id)}
-                  onRestore={() => setRestoreTarget(version)}
+                  onRestore={() => void prepareRestore(version.id)}
                 />
               ))}
             </div>
@@ -230,6 +248,7 @@ function VersionDetailsCard({ version, loading }: { version: CourseVersionDetail
   if (!version) return <aside className="rounded-[28px] border border-dashed border-[var(--border-xs)] bg-[var(--bg-surface)] p-6 text-center"><FileText className="mx-auto h-10 w-10 text-[var(--gray-300)]" /><h2 className="mt-3 text-base font-bold text-[var(--gray-900)]">Детали версии</h2><p className="mt-2 text-sm leading-6 text-[var(--gray-500)]">Выберите версию слева, чтобы посмотреть состав сохранённого snapshot_data.</p></aside>;
 
   const snapshot = asSnapshot(version.snapshot_data);
+  const snapshotStatus = getCourseVersionSnapshotStatus(snapshot);
   return (
     <aside className="rounded-[28px] border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5">
       <div className="space-y-2">
@@ -239,16 +258,28 @@ function VersionDetailsCard({ version, loading }: { version: CourseVersionDetail
         </div>
         <p className="text-sm leading-6 text-[var(--gray-600)]">{version.change_description || "Описание изменения не указано"}</p>
         <div className="rounded-2xl bg-slate-50 p-3 text-sm"><p className="font-bold text-[var(--gray-900)]">{getSnapshotTitle(snapshot)}</p><p className="mt-1 text-xs text-[var(--gray-400)]">Создана: {formatDateTime(version.created_at)} · QA score: {version.qa_score ?? "—"}</p></div>
+        {!snapshotStatus.restorable && (
+          <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{snapshotStatus.reason} Откат для этой версии отключён, чтобы не удалить текущую структуру курса.</span>
+          </div>
+        )}
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-3">
-        <Metric label="Модулей" value={snapshot.modules?.length ?? 0} />
-        <Metric label="Уроков" value={snapshot.lessons?.length ?? 0} />
-        <Metric label="Материалов" value={snapshot.lesson_contents?.length ?? 0} />
-        <Metric label="Источников" value={snapshot.sources?.length ?? 0} />
-        <Metric label="Квизов" value={snapshot.quizzes?.length ?? 0} />
-        <Metric label="Вопросов" value={snapshot.questions?.length ?? 0} />
-        <Metric label="Ответов" value={snapshot.answer_options?.length ?? 0} />
-      </div>
+      {snapshotStatus.restorable ? (
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <Metric label="Модулей" value={snapshot.modules?.length ?? 0} />
+          <Metric label="Уроков" value={snapshot.lessons?.length ?? 0} />
+          <Metric label="Материалов" value={snapshot.lesson_contents?.length ?? 0} />
+          <Metric label="Источников" value={snapshot.sources?.length ?? 0} />
+          <Metric label="Квизов" value={snapshot.quizzes?.length ?? 0} />
+          <Metric label="Вопросов" value={snapshot.questions?.length ?? 0} />
+          <Metric label="Ответов" value={snapshot.answer_options?.length ?? 0} />
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-[var(--border-xs)] bg-white p-4 text-sm leading-6 text-[var(--gray-500)]">
+          Для старых технических снимков без плана статистика структуры не выводится как полноценное состояние курса. Новые версии после генерации будут отображать реальные модули, уроки, материалы и квизы.
+        </div>
+      )}
     </aside>
   );
 }
@@ -265,7 +296,7 @@ function EmptyVersions() {
   return <div className="flex flex-col items-center justify-center px-6 py-16 text-center"><ShieldCheck className="h-12 w-12 text-[var(--gray-300)]" /><h3 className="mt-3 text-lg font-bold text-[var(--gray-900)]">Версий пока нет</h3><p className="mt-2 max-w-md text-sm leading-6 text-[var(--gray-500)]">Версия появится после генерации плана, урока, квиза, ручного редактирования или отката.</p></div>;
 }
 
-function RestoreConfirmModal({ version, busy, onCancel, onConfirm }: { version: CourseVersionListItem; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+function RestoreConfirmModal({ version, busy, onCancel, onConfirm }: { version: CourseVersionDetails; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-6" role="dialog" aria-modal="true">
       <div className="w-full max-w-lg rounded-[28px] border border-[var(--border-xs)] bg-[var(--bg-surface)] p-6 shadow-2xl">

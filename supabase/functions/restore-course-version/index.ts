@@ -63,6 +63,8 @@ Deno.serve(async (req) => {
     if (!version) throw new AppError("VERSION_NOT_FOUND", "Версия не найдена", 404);
 
     const snapshot = normalizeSnapshot(version.snapshot_data);
+    assertRestorableSnapshot(snapshot);
+
     const backup = await createCourseVersion({
       supabaseAdmin,
       courseId,
@@ -237,12 +239,34 @@ async function loadProtection(db: any, courseId: string, graph: Awaited<ReturnTy
 }
 
 function normalizeSnapshot(value: unknown): Snapshot {
-  const snapshot = record(value);
+  const root = record(value);
+  const snapshot = record(root?.snapshot_data) ?? record(root?.snapshot) ?? record(root?.data) ?? root;
   if (!snapshot) throw new AppError("VERSION_SNAPSHOT_INVALID", "Снимок версии повреждён или неполный", 400);
+
   const course = record(snapshot.course);
   if (!course) throw new AppError("VERSION_SNAPSHOT_INVALID", "В снимке версии нет данных курса", 400);
-  if (!Array.isArray(snapshot.modules) || !Array.isArray(snapshot.lessons)) throw new AppError("VERSION_SNAPSHOT_INVALID", "В снимке версии нет структуры курса", 400);
-  return { course, modules: rows(snapshot.modules), lessons: rows(snapshot.lessons), lessonContents: rows(snapshot.lesson_contents), sources: rows(snapshot.sources), quizzes: rows(snapshot.quizzes), questions: rows(snapshot.questions), answerOptions: rows(snapshot.answer_options) };
+
+  return {
+    course,
+    modules: rows(snapshot.modules),
+    lessons: rows(snapshot.lessons),
+    lessonContents: rows(snapshot.lesson_contents ?? snapshot.lessonContents),
+    sources: rows(snapshot.sources),
+    quizzes: rows(snapshot.quizzes),
+    questions: rows(snapshot.questions),
+    answerOptions: rows(snapshot.answer_options ?? snapshot.answerOptions),
+  };
+}
+
+function assertRestorableSnapshot(snapshot: Snapshot) {
+  if (snapshot.modules.length === 0 || snapshot.lessons.length === 0) {
+    throw new AppError(
+      "VERSION_SNAPSHOT_INVALID",
+      "Эта версия не содержит структуру курса. Скорее всего, она была создана до генерации плана, поэтому откат отключён.",
+      400,
+      { modules: snapshot.modules.length, lessons: snapshot.lessons.length },
+    );
+  }
 }
 
 function normalizeQuiz(row: Row, courseId: string) {
