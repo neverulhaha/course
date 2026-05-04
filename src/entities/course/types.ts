@@ -129,6 +129,8 @@ export interface LessonBlock {
 }
 
 export interface LessonContent {
+  /** ID строки lesson_contents, нужен для перехода из QA-замечаний к уроку. */
+  id?: string | null;
   goal: string | null;
   blocks: LessonBlock[];
 }

@@ -48,6 +48,29 @@ function getLessonNeighbors(modules: ModuleSummary[], selectedId: string) {
   };
 }
 
+function resolveFocusedLessonIdFromLocation(
+  lessons: LessonSummary[],
+  lessonContentByLessonId: Map<string, LessonContent>
+) {
+  const params = new URLSearchParams(window.location.search);
+  const explicitLessonId = params.get("lessonId");
+  if (explicitLessonId && lessons.some((lesson) => lesson.id === explicitLessonId)) return explicitLessonId;
+
+  const focusType = params.get("focusEntityType");
+  const focusId = params.get("focusEntityId");
+  if (!focusType || !focusId) return null;
+
+  if (focusType === "lesson" && lessons.some((lesson) => lesson.id === focusId)) return focusId;
+
+  if (focusType === "lesson_content") {
+    for (const [lessonId, content] of lessonContentByLessonId.entries()) {
+      if (content.id === focusId) return lessonId;
+    }
+  }
+
+  return null;
+}
+
 function EditorMobileDock({
   onStructure,
   onAssistant,
@@ -164,7 +187,13 @@ export default function CourseEditor() {
     const allModIds = bundle.modules.map((m) => m.id);
     setExpandedModules(allModIds);
     const flat = bundle.modules.flatMap((m) => m.lessons);
-    setSelectedLesson((current) => flat.find((l) => l.id === current?.id) ?? flat[0] ?? null);
+    const focusedLessonId = resolveFocusedLessonIdFromLocation(flat, bundle.lessonContentByLessonId);
+    setSelectedLesson((current) =>
+      flat.find((lesson) => lesson.id === focusedLessonId) ??
+      flat.find((lesson) => lesson.id === current?.id) ??
+      flat[0] ??
+      null
+    );
     void syncCourseStatusFromContent(courseId, userId);
     setLoading(false);
   };

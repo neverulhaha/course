@@ -134,3 +134,30 @@ export interface ProgressRow {
   next_recommended_lesson_id: string | null;
   updated_at?: string;
 }
+
+
+export interface QaReportRow {
+  id: string;
+  course_id: string;
+  version_id: string | null;
+  structure_score: number | null;
+  coherence_score: number | null;
+  level_match_score: number | null;
+  source_alignment_score: number | null;
+  total_score: number | null;
+  issues_json: Record<string, unknown> | unknown[] | string | null;
+  recommendations_json: Record<string, unknown> | unknown[] | string | null;
+  created_at?: string;
+}
+
+export interface CourseVersionRow {
+  id: string;
+  course_id: string;
+  version_number: number;
+  change_type: string;
+  change_description: string | null;
+  qa_score: number | null;
+  created_at?: string;
+  created_by: string | null;
+  snapshot_data: Record<string, unknown> | null;
+}

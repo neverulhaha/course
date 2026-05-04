@@ -237,7 +237,7 @@ export async function fetchCourseEditorBundle(
   const { data: lcRows } = lessonIds.length > 0
     ? await supabase
         .from("lesson_contents")
-        .select("lesson_id, theory_text, examples_text, practice_text, checklist_text")
+        .select("id, lesson_id, theory_text, examples_text, practice_text, checklist_text")
         .in("lesson_id", lessonIds)
     : { data: [] as unknown[] };
 
