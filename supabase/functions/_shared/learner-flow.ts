@@ -639,13 +639,26 @@ async function submitQuizAttempt(req: Request, db: SupabaseClient, userId: strin
 }
 
 async function courseLessonIds(db: SupabaseClient, courseId: string): Promise<string[]> {
-  const { data: modules, error: mErr } = await db.from("modules").select("id").eq("course_id", courseId).order("position", { ascending: true });
+  const { data: modules, error: mErr } = await db
+    .from("modules")
+    .select("id")
+    .eq("course_id", courseId)
+    .order("position", { ascending: true });
   if (mErr) throw new AppError("DATABASE_ERROR", "Не удалось загрузить модули курса", 500, { error: mErr.message });
-  const moduleIds = (modules ?? []).map((m) => clean(asRecord(m)?.id)).filter(Boolean);
-  if (moduleIds.length === 0) return [];
-  const { data: lessons, error: lErr } = await db.from("lessons").select("id").in("module_id", moduleIds).order("position", { ascending: true });
-  if (lErr) throw new AppError("DATABASE_ERROR", "Не удалось загрузить уроки курса", 500, { error: lErr.message });
-  return (lessons ?? []).map((l) => clean(asRecord(l)?.id)).filter(Boolean);
+
+  const result: string[] = [];
+  for (const moduleRow of modules ?? []) {
+    const moduleId = clean(asRecord(moduleRow)?.id);
+    if (!moduleId) continue;
+    const { data: lessons, error: lErr } = await db
+      .from("lessons")
+      .select("id")
+      .eq("module_id", moduleId)
+      .order("position", { ascending: true });
+    if (lErr) throw new AppError("DATABASE_ERROR", "Не удалось загрузить уроки курса", 500, { error: lErr.message });
+    result.push(...(lessons ?? []).map((l) => clean(asRecord(l)?.id)).filter(Boolean));
+  }
+  return result;
 }
 async function verifyLessonAccess(db: SupabaseClient, courseId: string, lessonId: string, userId: string): Promise<Rec> {
   await getOwnedCourse(db, courseId, userId);
@@ -663,14 +676,19 @@ async function recalculateProgressInternal(db: SupabaseClient, courseId: string,
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
   const nextRecommended = lessonIds.find((id) => !completedSet.has(id)) ?? null;
   const lastCompleted = (completions ?? []).sort((a, b) => clean(asRecord(b)?.completed_at).localeCompare(clean(asRecord(a)?.completed_at)))[0];
-  const lastOpened = lastOpenedLessonId || clean(asRecord(lastCompleted)?.lesson_id) || lessonIds[0] || null;
+  const { data: existing } = await db.from("progress").select("id, last_opened_lesson_id").eq("user_id", userId).eq("course_id", courseId).maybeSingle();
+  const existingRecord = asRecord(existing);
+  const existingId = clean(existingRecord?.id);
+  const requestedLastOpened = clean(lastOpenedLessonId);
+  const previousLastOpened = clean(existingRecord?.last_opened_lesson_id);
+  const validRequestedLastOpened = requestedLastOpened && lessonIds.includes(requestedLastOpened) ? requestedLastOpened : "";
+  const validPreviousLastOpened = previousLastOpened && lessonIds.includes(previousLastOpened) ? previousLastOpened : "";
+  const lastOpened = validRequestedLastOpened || validPreviousLastOpened || clean(asRecord(lastCompleted)?.lesson_id) || lessonIds[0] || null;
   const payload = { user_id: userId, course_id: courseId, completed_lessons_count: completed, total_lessons_count: total, completion_percent: percent, last_opened_lesson_id: lastOpened, next_recommended_lesson_id: nextRecommended, updated_at: new Date().toISOString() };
-  const { data: existing } = await db.from("progress").select("id").eq("user_id", userId).eq("course_id", courseId).maybeSingle();
-  const existingId = clean(asRecord(existing)?.id);
   const result = existingId ? await db.from("progress").update(payload).eq("id", existingId).select("*").maybeSingle() : await db.from("progress").insert(payload).select("*").maybeSingle();
   if (result.error) throw new AppError("DATABASE_ERROR", "Не удалось сохранить прогресс", 500, { error: result.error.message });
   const progress = (asRecord(result.data) ?? payload) as Rec;
-  await audit(db, { userId, courseId, action: "progress_recalculated", entityType: "progress", entityId: clean(progress.id) || undefined, metadata: { completion_percent: percent, completed_lessons_count: completed, total_lessons_count: total, next_recommended_lesson_id: nextRecommended } });
+  await audit(db, { userId, courseId, action: "progress_recalculated", entityType: "progress", entityId: clean(progress.id) || undefined, metadata: { completion_percent: percent, completed_lessons_count: completed, total_lessons_count: total, next_recommended_lesson_id: nextRecommended, last_opened_lesson_id: lastOpened } });
   return progress;
 }
 async function recalculateProgress(req: Request, db: SupabaseClient, userId: string): Promise<Response> {

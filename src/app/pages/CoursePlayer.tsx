@@ -24,7 +24,7 @@ import {
   lessonContentToPlayerBlocks,
   submitLessonAssignment,
 } from "@/services/coursePlayback.service";
-import { recalculateProgress } from "@/services/progress.service";
+import { getCourseLearningStats, recalculateProgress, type CourseLearningStats } from "@/services/progress.service";
 import type { PlayerCourse, PlayerLesson } from "@/entities/course/types";
 
 type LessonBlock = ReturnType<typeof lessonContentToPlayerBlocks>["blocks"][number];
@@ -102,6 +102,43 @@ function BlockCard({ block }: { block: LessonBlock }) {
   );
 }
 
+
+function ProgressWidget({ stats, fallbackCompleted, fallbackTotal, loading }: { stats: CourseLearningStats | null; fallbackCompleted: number; fallbackTotal: number; loading: boolean }) {
+  const progress = stats?.progress;
+  const completed = progress?.completedLessonsCount ?? fallbackCompleted;
+  const total = progress?.totalLessonsCount ?? fallbackTotal;
+  const percent = progress?.completionPercent ?? (total ? Math.round((completed / total) * 100) : 0);
+  const nextTitle = stats?.nextRecommendedLesson?.title ?? null;
+  const averageScore = stats?.averageQuizScore;
+
+  return (
+    <section className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gray-400)]">Прогресс</p>
+          <p className="mt-1 text-2xl font-extrabold text-[var(--gray-900)]">{loading ? "—" : `${percent}%`}</p>
+        </div>
+        <div className="rounded-xl bg-[var(--brand-blue)]/10 px-3 py-2 text-right text-xs font-bold text-[var(--brand-blue)]">
+          {completed} из {total || 0}<br />уроков
+        </div>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--gray-100)]">
+        <div className="h-full rounded-full bg-[var(--brand-blue)] transition-all" style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
+      </div>
+      <div className="mt-4 grid gap-2 text-xs font-semibold text-[var(--gray-500)]">
+        <div className="flex justify-between gap-3">
+          <span>Следующий урок</span>
+          <span className="max-w-[55%] truncate text-right text-[var(--gray-800)]">{percent >= 100 ? "Курс завершён" : nextTitle ?? "Не выбран"}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span>Средний результат тестов</span>
+          <span className="text-[var(--gray-800)]">{averageScore == null ? "—" : `${averageScore}%`}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function StatePage({ type }: { type: "not_found" | "forbidden" | "empty" | "error" }) {
   const config = {
     not_found: {
@@ -157,6 +194,8 @@ export default function CoursePlayer() {
   const [notice, setNotice] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
+  const [learningStats, setLearningStats] = useState<CourseLearningStats | null>(null);
+  const [progressLoading, setProgressLoading] = useState(false);
 
   const modules = course?.modules ?? [];
   const lessons = useMemo(() => modules.flatMap((module) => module.lessons), [modules]);
@@ -166,8 +205,15 @@ export default function CoursePlayer() {
   const prevLesson = activeIndex > 0 ? lessons[activeIndex - 1] : null;
   const nextLesson = activeIndex >= 0 && activeIndex < lessons.length - 1 ? lessons[activeIndex + 1] : null;
   const completedCount = lessons.filter((lesson) => lesson.completed).length;
-  const progressPercent = lessons.length ? Math.round((completedCount / lessons.length) * 100) : 0;
   const allCompleted = lessons.length > 0 && completedCount >= lessons.length;
+
+  const refreshLearningStats = async () => {
+    if (!courseId) return;
+    setProgressLoading(true);
+    const result = await getCourseLearningStats(courseId);
+    setProgressLoading(false);
+    if (!result.error && result.data) setLearningStats(result.data);
+  };
 
   useEffect(() => {
     if (!courseId) {
@@ -185,6 +231,7 @@ export default function CoursePlayer() {
       }
       setCourse(data);
       setPageState(data.modules.some((module) => module.lessons.length > 0) ? "ready" : "not_found");
+      void refreshLearningStats();
       if (!lessonId && data.currentLessonId) {
         navigate(`/learn/${courseId}/lesson/${data.currentLessonId}`, { replace: true });
       }
@@ -224,7 +271,8 @@ export default function CoursePlayer() {
         assignmentStatus: res.assignmentStatus,
       });
       setLessonLoading(false);
-      void recalculateProgress(courseId, activeLesson.id);
+      const progressResult = await recalculateProgress(courseId, activeLesson.id);
+      if (!progressResult.error) void refreshLearningStats();
     })();
     return () => { cancelled = true; };
   }, [courseId, activeLesson?.id, activeLesson?.title, user?.id]);
@@ -245,7 +293,7 @@ export default function CoursePlayer() {
         lessons: module.lessons.map((item) => ({ ...item, current: item.id === lesson.id })),
       })),
     } : prev);
-    void recalculateProgress(courseId, lesson.id);
+    void recalculateProgress(courseId, lesson.id).then(() => refreshLearningStats());
     navigate(`/learn/${courseId}/lesson/${lesson.id}`);
   };
 
@@ -268,6 +316,7 @@ export default function CoursePlayer() {
       })),
     } : prev);
     setNotice("Урок завершён.");
+    void refreshLearningStats();
 
     if (nextLesson) {
       window.setTimeout(() => goToLesson(nextLesson), 450);
@@ -286,6 +335,7 @@ export default function CoursePlayer() {
     const result = await submitLessonAssignment(courseId, activeLesson.id, text);
     setAssignmentBusy(false);
     setNotice(result.error ? "Не удалось отправить задание. Попробуйте ещё раз." : "Практическое задание отправлено.");
+    if (!result.error) void refreshLearningStats();
   };
 
   if (pageState === "loading") {
@@ -349,13 +399,7 @@ export default function CoursePlayer() {
           </div>
           <h1 className="line-clamp-2 text-lg font-extrabold tracking-tight text-[var(--gray-900)]">{course.title}</h1>
           <div className="mt-4">
-            <div className="mb-2 flex justify-between text-xs font-bold text-[var(--gray-500)]">
-              <span>Прогресс</span>
-              <span>{completedCount}/{lessons.length} уроков</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-[var(--gray-100)]">
-              <div className="h-full rounded-full bg-[var(--brand-blue)] transition-all" style={{ width: `${progressPercent}%` }} />
-            </div>
+            <ProgressWidget stats={learningStats} fallbackCompleted={completedCount} fallbackTotal={lessons.length} loading={progressLoading} />
           </div>
         </div>
 

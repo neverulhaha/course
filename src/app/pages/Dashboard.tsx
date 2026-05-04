@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { listDashboardCourses, type DashboardCourse } from "@/services/courseQuery.service";
 import { deleteCourse } from "@/services/courseDelete.service";
 import { COURSE_STATUS_UI, type CourseStatus } from "@/entities/course/courseStatus";
+import { getCourseLearningStats, type CourseLearningStats } from "@/services/progress.service";
 
 /* ─── Types ───────────────────────────────────────────────── */
 
@@ -31,6 +32,7 @@ interface Course {
   lessons: number;
   lastModified: string;
   qaScore: number | null;
+  learningStats?: CourseLearningStats | null;
 }
 
 function mapDashboardCourse(c: DashboardCourse): Course {
@@ -43,6 +45,7 @@ function mapDashboardCourse(c: DashboardCourse): Course {
     lessons: c.lessons,
     lastModified: c.lastModified,
     qaScore: c.qaScore,
+    learningStats: null,
   };
 }
 
@@ -334,6 +337,56 @@ function RecentCard({ course, onDelete, deleting }: { course: Course; onDelete: 
   );
 }
 
+
+function ContinueLearningCard({ course }: { course: Course }) {
+  const stats = course.learningStats;
+  if (!stats || stats.progress.totalLessonsCount === 0) return null;
+
+  const isCompleted = stats.progress.completionPercent >= 100;
+  const targetLessonId = stats.progress.lastOpenedLessonId || stats.progress.nextRecommendedLessonId;
+  const href = targetLessonId ? `/learn/${course.id}/lesson/${targetLessonId}` : `/learn/${course.id}`;
+  const lessonTitle = stats.lastOpenedLesson?.title ?? stats.nextRecommendedLesson?.title ?? "Первый урок курса";
+
+  return (
+    <div
+      className="rounded-xl sm:rounded-2xl min-w-0"
+      style={{
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border-xs)",
+        boxShadow: "var(--shadow-xs)",
+        padding: "clamp(16px, 3vw, 22px) clamp(16px, 3vw, 24px)",
+      }}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[var(--brand-blue)]">Продолжить обучение</p>
+          <h3 className="line-clamp-2 text-base font-extrabold leading-snug text-[var(--gray-900)]">{course.title}</h3>
+        </div>
+        <span className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold ${isCompleted ? "bg-emerald-50 text-emerald-600" : "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]"}`}>
+          {isCompleted ? "Курс завершён" : `${stats.progress.completionPercent}%`}
+        </span>
+      </div>
+
+      <div className="mb-3 flex items-center gap-2.5">
+        <ThinBar value={stats.progress.completionPercent} color={isCompleted ? "#2ECC71" : "var(--brand-blue)"} />
+        <span className="shrink-0 text-[11px] font-bold tabular-nums text-[var(--gray-600)]">
+          {stats.progress.completedLessonsCount}/{stats.progress.totalLessonsCount}
+        </span>
+      </div>
+
+      <div className="mb-4 space-y-1 text-[11px] font-semibold text-[var(--gray-500)]">
+        <p className="truncate">Последний урок: <span className="text-[var(--gray-800)]">{lessonTitle}</span></p>
+        <p>Тесты: {stats.quizAttemptsCount ? `${stats.quizAttemptsCount} попыток` : "пока нет попыток"}{stats.averageQuizScore == null ? "" : ` · средний результат ${stats.averageQuizScore}%`}</p>
+      </div>
+
+      <Link to={href} className="vs-btn vs-btn-primary w-full justify-center min-h-10" style={{ fontSize: "11px" }}>
+        <Play className="w-3 h-3 shrink-0" />
+        {isCompleted ? "Повторить курс" : "Продолжить"}
+      </Link>
+    </div>
+  );
+}
+
 /* ─── Course row (compact list) ───────────────────────────── */
 
 function CourseRow({ course, onDelete, deleting }: { course: Course; onDelete: (course: Course) => void; deleting: boolean }) {
@@ -583,7 +636,18 @@ export default function Dashboard() {
         return;
       }
       setLoadError(null);
-      setCourses(rows.map(mapDashboardCourse));
+      const mappedCourses = rows.map(mapDashboardCourse);
+      setCourses(mappedCourses);
+
+      const statsEntries = await Promise.all(
+        mappedCourses.map(async (course) => {
+          const stats = await getCourseLearningStats(course.id);
+          return [course.id, stats.error ? null : stats.data] as const;
+        }),
+      );
+      if (cancelled) return;
+      const statsByCourse = new Map(statsEntries);
+      setCourses((items) => items.map((course) => ({ ...course, learningStats: statsByCourse.get(course.id) ?? null })));
     })();
     return () => {
       cancelled = true;
@@ -596,6 +660,16 @@ export default function Dashboard() {
   }, [searchQuery, courses]);
 
   const recent = courses.slice(0, 2);
+  const continueCourses = courses
+    .filter((course) => course.learningStats && course.learningStats.progress.totalLessonsCount > 0)
+    .sort((a, b) => {
+      const ap = a.learningStats?.progress.completionPercent ?? 0;
+      const bp = b.learningStats?.progress.completionPercent ?? 0;
+      if (ap === 100 && bp !== 100) return 1;
+      if (bp === 100 && ap !== 100) return -1;
+      return bp - ap;
+    })
+    .slice(0, 2);
   const showEmpty = courses.length === 0 && !loadError;
 
   const handleDeleteCourse = async (course: Course) => {
@@ -704,6 +778,15 @@ export default function Dashboard() {
           <>
             {/* Summary strip */}
             <SummaryStrip courses={courses} />
+
+            {continueCourses.length > 0 && (
+              <section className="mb-8 sm:mb-10 lg:mb-12">
+                <SectionHead title="Продолжить обучение" count={continueCourses.length} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-3.5 min-w-0">
+                  {continueCourses.map((course) => <ContinueLearningCard key={course.id} course={course} />)}
+                </div>
+              </section>
+            )}
 
             {/* Recent / continue working */}
             <section className="mb-8 sm:mb-10 lg:mb-12">
