@@ -279,3 +279,7 @@ export async function getCourseLearningStats(courseId: string): Promise<InvokeRe
     return { data: null, error: "Не удалось загрузить статистику обучения" };
   }
 }
+
+export function getContinueLessonId(progress: Pick<CourseProgress, "lastOpenedLessonId" | "nextRecommendedLessonId"> | null | undefined): string | null {
+  return progress?.lastOpenedLessonId ?? progress?.nextRecommendedLessonId ?? null;
+}

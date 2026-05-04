@@ -515,3 +515,7 @@ export async function submitLessonAssignment(courseId: string, lessonId: string,
   const { data, error } = await submitAssignmentViaFunction(courseId, lessonId, text);
   return { error: error ? new Error(error) : null, submission: data?.submission, progress: data?.progress };
 }
+
+export function buildCoursePlaybackPath(courseId: string, lessonId?: string | null): string {
+  return lessonId ? `/learn/${courseId}/lesson/${lessonId}` : `/learn/${courseId}`;
+}

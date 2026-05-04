@@ -15,9 +15,9 @@
  * (`courseCreation.service`, `courseEditor.service` — sync/archive).
  */
 
-export type CourseStatus = "draft" | "generating_plan" | "generating_lessons" | "generating_quizzes" | "qa_checking" | "plan" | "partial" | "ready" | "failed" | "archived";
+export type CourseStatus = "draft" | "generating_plan" | "generating_lessons" | "generating_quizzes" | "qa_checking" | "plan" | "partial" | "ready" | "failed" | "error" | "archived";
 
-export const COURSE_STATUS_VALUES = ["draft", "generating_plan", "generating_lessons", "generating_quizzes", "qa_checking", "plan", "partial", "ready", "failed", "archived"] as const satisfies readonly CourseStatus[];
+export const COURSE_STATUS_VALUES = ["draft", "generating_plan", "generating_lessons", "generating_quizzes", "qa_checking", "plan", "partial", "ready", "failed", "error", "archived"] as const satisfies readonly CourseStatus[];
 
 export function isCourseStatus(v: string): v is CourseStatus {
   return (COURSE_STATUS_VALUES as readonly string[]).includes(v);
@@ -29,7 +29,7 @@ export const COURSE_STATUS_UI: Record<
   { label: string; dot: string; color: string; bg: string }
 > = {
   draft: {
-    label: "Новый",
+    label: "Черновик",
     dot: "#8E9BAB",
     color: "#5C6B7A",
     bg: "rgba(142,155,171,0.08)",
@@ -65,19 +65,26 @@ export const COURSE_STATUS_UI: Record<
     bg: "rgba(74,144,226,0.07)",
   },
   partial: {
-    label: "Создан частично",
+    label: "Частично заполнен",
     dot: "#F1C40F",
     color: "#D4A017",
     bg: "rgba(241,196,15,0.08)",
   },
   ready: {
-    label: "Курс готов",
+    label: "Готов",
     dot: "#2ECC71",
     color: "#2ECC71",
     bg: "rgba(46,204,113,0.07)",
   },
   failed: {
-    label: "Ошибка создания",
+    label: "Ошибка",
+    dot: "#EF4444",
+    color: "#B91C1C",
+    bg: "rgba(239,68,68,0.08)",
+  },
+
+  error: {
+    label: "Ошибка",
     dot: "#EF4444",
     color: "#B91C1C",
     bg: "rgba(239,68,68,0.08)",
@@ -95,6 +102,7 @@ const LEGACY_STATUS_MAP: Record<string, CourseStatus> = {
   "needs-review": "partial",
   "has-issues": "partial",
   empty: "draft",
+  error: "error",
 };
 
 /**
@@ -118,7 +126,7 @@ export interface CourseContentMetrics {
  * Выводит статус по наполненности (без учёта `archived`).
  * Используется в `syncCourseStatusFromContent` для выравнивания БД с фактом; не подменяет собой `courses.status` в UI.
  */
-export function inferCourseStatusFromMetrics(m: CourseContentMetrics): Exclude<CourseStatus, "archived" | "generating_plan" | "generating_lessons" | "generating_quizzes" | "qa_checking" | "failed"> {
+export function inferCourseStatusFromMetrics(m: CourseContentMetrics): Exclude<CourseStatus, "archived" | "generating_plan" | "generating_lessons" | "generating_quizzes" | "qa_checking" | "failed" | "error"> {
   if (m.moduleCount === 0 && m.lessonCount === 0) return "draft";
   if (m.lessonCount === 0) return "plan";
   if (m.filledCount === 0) return "plan";

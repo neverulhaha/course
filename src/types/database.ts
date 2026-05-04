@@ -161,3 +161,14 @@ export interface CourseVersionRow {
   created_by: string | null;
   snapshot_data: Record<string, unknown> | null;
 }
+
+export interface CourseListRow {
+  id: string;
+  author_id: string;
+  title: string;
+  topic: string | null;
+  status: CourseStatus | "error" | "failed" | string;
+  current_version_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}

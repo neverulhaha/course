@@ -16,7 +16,7 @@ const STATUS_CONFIG: Record<
   }
 > = {
   draft: {
-    label: "Новый",
+    label: "Черновик",
     icon: FileText,
     colors: "bg-gray-100 text-gray-700 border-gray-300",
     iconColor: "text-gray-600",
@@ -52,19 +52,25 @@ const STATUS_CONFIG: Record<
     iconColor: "text-[#4A90E2]",
   },
   partial: {
-    label: "Создан частично",
+    label: "Частично заполнен",
     icon: Loader,
     colors: "bg-amber-50 text-amber-800 border-amber-200",
     iconColor: "text-amber-600",
   },
   ready: {
-    label: "Курс готов",
+    label: "Готов",
     icon: CheckCircle2,
     colors: "bg-[#2ECC71]/20 text-gray-900 border-[#2ECC71]/40",
     iconColor: "text-[#4A90E2]",
   },
   failed: {
-    label: "Ошибка создания",
+    label: "Ошибка",
+    icon: Loader,
+    colors: "bg-red-50 text-red-800 border-red-200",
+    iconColor: "text-red-600",
+  },
+  error: {
+    label: "Ошибка",
     icon: Loader,
     colors: "bg-red-50 text-red-800 border-red-200",
     iconColor: "text-red-600",
