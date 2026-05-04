@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   Plus,
@@ -122,7 +122,7 @@ function SummaryStrip({ courses }: { courses: Course[] }) {
     { value: courses.length, label: "Курсов",     color: "var(--brand-blue)" },
     { value: inProgress,     label: "В работе",   color: "#F1C40F"           },
     { value: ready,          label: "Готово",      color: "#2ECC71"           },
-    { value: avgQa,          label: "Средний QA",  color: "var(--gray-700)"   },
+    { value: avgQa,          label: "Качество",  color: "var(--gray-700)"   },
   ];
 
   return (
@@ -289,7 +289,7 @@ function RecentCard({ course }: { course: Course }) {
           style={{ padding: "5px 10px", fontSize: "11px" }}
         >
           <Shield className="w-3 h-3 shrink-0" />
-          QA
+          Качество
         </Link>
         <Link
           to={`/learn/${course.id}`}
@@ -357,7 +357,7 @@ function CourseRow({ course }: { course: Course }) {
         </div>
       </div>
 
-      {/* Очень узкие экраны: прогресс + QA отдельной строкой */}
+      {/* Очень узкие экраны: прогресс + качество отдельной строкой */}
       <div className="flex sm:hidden w-full basis-full items-center gap-2 pl-10">
         <ThinBar value={course.progress} color={barColor} />
         <span
@@ -397,7 +397,7 @@ function CourseRow({ course }: { course: Course }) {
         </span>
       </div>
 
-      {/* QA — sm+ */}
+      {/* Качество — sm+ */}
       <div className="hidden sm:block flex-shrink-0">
         <QaChip score={course.qaScore} />
       </div>
@@ -498,7 +498,7 @@ function NoCourses({ searchQuery }: { searchQuery: string }) {
           lineHeight: "var(--leading-relaxed)",
         }}
       >
-        Создайте первый курс с помощью ИИ. Задайте тему — и уже через минуту получите готовую структуру.
+        Создайте первый курс с помощью ИИ. Задайте тему и получите готовую структуру после генерации.
       </p>
       <div className="flex flex-col w-full max-w-sm sm:max-w-none sm:flex-row items-stretch sm:items-center justify-center gap-3 touch-manipulation">
         <Link

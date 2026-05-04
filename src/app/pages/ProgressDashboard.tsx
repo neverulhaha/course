@@ -694,8 +694,8 @@ export default function ProgressDashboard() {
         {
           emoji: "🔥",
           title: "Серия занятий",
-          description: "Серия дней подряд",
-          earned: false,
+          description: "Занимайтесь 3 дня подряд",
+          earned: stats.streak >= 3,
         },
         {
           emoji: "🏆",
@@ -704,7 +704,7 @@ export default function ProgressDashboard() {
           earned: stats.completedCourses >= 3,
         },
       ] as Achievement[],
-    [stats.averageScore, stats.completedCourses]
+    [stats.averageScore, stats.completedCourses, stats.streak]
   );
 
   const hasProgress = courses.length > 0 || stats.completedLessons > 0;

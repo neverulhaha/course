@@ -29,7 +29,7 @@ export const COURSE_STATUS_UI: Record<
   { label: string; dot: string; color: string; bg: string }
 > = {
   draft: {
-    label: "Черновик",
+    label: "Новый",
     dot: "#8E9BAB",
     color: "#5C6B7A",
     bg: "rgba(142,155,171,0.08)",

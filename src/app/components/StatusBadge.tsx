@@ -16,7 +16,7 @@ const STATUS_CONFIG: Record<
   }
 > = {
   draft: {
-    label: "Черновик",
+    label: "Новый",
     icon: FileText,
     colors: "bg-gray-100 text-gray-700 border-gray-300",
     iconColor: "text-gray-600",

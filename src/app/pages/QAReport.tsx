@@ -43,7 +43,7 @@ export default function QAReportPage() {
       setLatest(report);
       await refresh();
     } catch (e: any) {
-      setError(e.message ?? "Не удалось запустить QA");
+      setError(e.message ?? "Не удалось запустить проверку");
     } finally {
       setBusy(false);
     }
@@ -56,11 +56,11 @@ export default function QAReportPage() {
     <main className="mx-auto max-w-6xl p-6 space-y-6">
       <header className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">QA-проверка курса</h1>
-          <p className="text-sm text-slate-500">Контроль качества структуры, содержимого, источников и квизов.</p>
+          <h1 className="text-2xl font-semibold">Проверка качества курса</h1>
+          <p className="text-sm text-slate-500">Контроль структуры, содержимого, источников и квизов.</p>
         </div>
         <button onClick={handleRunQa} disabled={busy || !courseId} className="rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50">
-          {busy ? "Проверяем…" : "Запустить QA"}
+          {busy ? "Проверяем…" : "Запустить проверку"}
         </button>
       </header>
 
@@ -75,10 +75,10 @@ export default function QAReportPage() {
           <Score label="Источник" value={latest.source_alignment_score} />
         </section>
       ) : (
-        <div className="rounded-xl border p-6 text-slate-500">QA-отчётов пока нет.</div>
+        <div className="rounded-xl border p-6 text-slate-500">Отчётов пока нет.</div>
       )}
 
-      {latest?.issues_json?.fallback && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">AI-проверка недоступна, выполнена базовая проверка правил.</div>}
+      {latest?.issues_json?.fallback && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">Выполнена базовая проверка по правилам качества.</div>}
 
       <section className="rounded-2xl border p-5 space-y-3">
         <h2 className="text-lg font-semibold">Проблемы</h2>

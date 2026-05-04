@@ -299,7 +299,7 @@ export default function CourseEditor() {
       setShowSaveIndicator(true);
       setTimeout(() => setShowSaveIndicator(false), 2000);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось выполнить AI-действие";
+      const message = error instanceof Error ? error.message : "Не удалось выполнить действие с ИИ";
       setActionError(message);
       setGenerationNotice({ type: "error", message });
     } finally {
@@ -495,7 +495,7 @@ export default function CourseEditor() {
 
   const handleDeleteModule = (module: ModuleSummary) => {
     if (!userId) return;
-    const confirmed = window.confirm("Удалить модуль «" + module.title + "» вместе со всеми уроками и контентом?");
+    const confirmed = window.confirm("Удалить модуль «" + module.title + "» вместе со всеми уроками и материалами?");
     if (!confirmed) return;
     void withSaveAction("module-delete", async () => deleteModule(module.id, userId));
   };

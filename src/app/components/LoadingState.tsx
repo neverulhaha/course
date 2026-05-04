@@ -1,4 +1,4 @@
-﻿import { Loader2, Sparkles, Shield, FileText, CheckCircle, Layers } from "lucide-react";
+import { Loader2, Sparkles, Shield, FileText, CheckCircle, Layers } from "lucide-react";
 
 interface LoadingStateProps {
   type?: "default" | "generating-plan" | "generating-lesson" | "generating-course" | "qa-check" | "processing-source";
@@ -39,7 +39,7 @@ export function LoadingState({
     "generating-lesson": {
       icon: Sparkles,
       title: "Генерация урока",
-      description: "ИИ создаёт контент урока на основе плана и источников",
+      description: "ИИ создаёт материалы урока на основе плана и источников",
       gradient: "from-[#4A90E2]/10 to-[#2ECC71]/10",
       steps: [
         "Анализ цели урока",
@@ -56,13 +56,13 @@ export function LoadingState({
     },
     "qa-check": {
       icon: Shield,
-      title: "Выполняется QA-проверка",
-      description: "Система анализирует качество курса по множеству параметров",
+      title: "Выполняется проверка качества",
+      description: "Система анализирует структуру, связность и соответствие источникам",
       gradient: "from-[#2ECC71]/10 to-green-500/5",
       steps: [
         "Проверка структуры и связности",
         "Анализ соответствия целям",
-        "Проверка подтверждения источниками",
+        "Проверка соответствия источникам",
         "Выявление противоречий",
         "Формирование отчёта",
       ],
@@ -70,13 +70,13 @@ export function LoadingState({
     "processing-source": {
       icon: FileText,
       title: "Обработка источника",
-      description: "Извлекаем содержимое и индексируем для генерации",
+      description: "Подготавливаем текст для генерации",
       gradient: "from-blue-500/10 to-[#4A90E2]/5",
       steps: [
-        "Распознавание документа",
+        "Проверка текста",
         "Извлечение текста",
         "Анализ структуры",
-        "Индексация содержимого",
+        "Подготовка содержимого",
       ],
     },
   };

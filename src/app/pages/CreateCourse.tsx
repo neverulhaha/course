@@ -321,7 +321,7 @@ function StepType({ data, update }: { data: FormData; update: (p: Partial<FormDa
     <>
       <StepTitle
         title="Как создадим курс?"
-        subtitle="Выберите подход — оба варианта используют ИИ"
+        subtitle="Выберите подход к созданию курса"
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3.5">
         <TypeCard
@@ -336,7 +336,7 @@ function StepType({ data, update }: { data: FormData; update: (p: Partial<FormDa
           onClick={() => update({ type: "source" })}
           icon={FileText}
           title="По источнику"
-          description="Загрузите материалы — курс будет основан на них"
+          description="Добавьте материал — курс будет основан на нём"
         />
       </div>
     </>
@@ -599,7 +599,7 @@ function StepReview({ data }: { data: FormData }) {
         ))}
       </div>
 
-      {/* AI note */}
+      {/* Generation note */}
       <div
         className="flex gap-3 rounded-xl border border-[rgba(74,144,226,0.12)] bg-[rgba(74,144,226,0.04)] p-3.5 sm:gap-3 sm:p-4"
       >
@@ -608,7 +608,7 @@ function StepReview({ data }: { data: FormData }) {
           className="text-[length:var(--text-xs)] leading-[var(--leading-relaxed)] text-[var(--gray-600)]"
           style={{ fontFamily: FONT }}
         >
-          ИИ сгенерирует структуру курса. Если выбран режим по источнику, материал будет построен на основе введённого текста; в строгом режиме факты вне источника не добавляются.
+          ИИ сгенерирует структуру курса. Если выбран режим по источнику, материал будет построен на основе введённого текста; при строгом следовании источнику дополнительные факты не добавляются.
         </p>
       </div>
     </>
@@ -646,7 +646,6 @@ function CourseCreationFlow({ initialType }: FlowProps) {
       setSubmitError(null);
       setCreating(true);
       void (async () => {
-        // Канонический chain: form → validate → CreateCourseDraftInput → RPC (см. createCourseDraft.ts)
         const validationError = validateCreateCourseFormForSubmit(data);
         if (validationError) {
           setSubmitError(validationError);

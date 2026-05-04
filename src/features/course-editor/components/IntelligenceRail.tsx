@@ -5,7 +5,6 @@ import {
   Check,
   ExternalLink,
   History as HistoryIcon,
-  Plus,
   RefreshCw,
   Sparkles,
   FileText,
@@ -84,7 +83,7 @@ function QaSection({ courseId, lesson, content }: { courseId: string; lesson: Le
 
   if (!lesson.hasIssues) {
     return (
-      <RailSection title="QA-статус">
+      <RailSection title="Качество">
         <div
           style={{
             display: "flex",
@@ -163,7 +162,7 @@ function QaSection({ courseId, lesson, content }: { courseId: string; lesson: Le
           marginBottom: 16,
         }}
       >
-        Полный QA-отчёт
+        Отчёт качества
         <ExternalLink style={{ width: 11, height: 11 }} />
       </Link>
     </RailSection>
@@ -182,7 +181,7 @@ function GenerationProgressSection({ modules }: { modules: ModuleSummary[] }) {
     return (
       <RailSection title="Генерация">
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold leading-5 text-slate-600">
-          Контент уроков ещё не создан. Сначала сгенерируйте содержание курса или отдельного урока.
+          Материалы уроков ещё не созданы. Сначала сгенерируйте содержание курса или отдельного урока.
         </div>
       </RailSection>
     );
@@ -212,7 +211,7 @@ function AiActionsSection({ onGenerateLesson, onGenerateCourseContent, onRegener
   const onlySource = sources.some((source) => source.onlySourceMode);
   const hasBlockContent = (blockType: AiBlockType) => Boolean(content.blocks.find((block) => block.id === blockType)?.content.trim());
   return (
-    <RailSection title="AI-действия" borderTop>
+    <RailSection title="ИИ-помощник" borderTop>
       {hasSources && (
         <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] font-semibold leading-5 text-blue-800">
           {onlySource
@@ -380,29 +379,6 @@ function SourcesSection({ sources }: { sources: CourseSourceSummary[] }) {
           ))
         )}
       </div>
-
-      <button
-        type="button"
-        disabled
-        title="Добавление источников выполняется на экране создания курса"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          fontFamily: FONT,
-          fontWeight: 600,
-          fontSize: "11px",
-          color: "var(--gray-400)",
-          background: "transparent",
-          border: "none",
-          cursor: "not-allowed",
-          opacity: 0.7,
-          marginBottom: 16,
-        }}
-      >
-        <Plus style={{ width: 11, height: 11 }} />
-        Добавить источник
-      </button>
     </RailSection>
   );
 }

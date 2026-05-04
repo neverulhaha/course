@@ -158,7 +158,7 @@ function ContentBlock({
           </span>
           <span className="inline-flex items-center gap-1 rounded-md bg-[rgba(74,144,226,0.1)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--brand-blue)]">
             <Sparkles className="size-2.5" />
-            ИИ / ручное
+            Редактируемый блок
           </span>
         </div>
 

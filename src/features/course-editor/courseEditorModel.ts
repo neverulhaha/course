@@ -17,7 +17,7 @@ export const StatusBadgeMap: Record<
   "has-issues": { label: "Есть замечания", dot: "#F1C40F", text: "text-orange-700" },
   generated: { label: "Сгенерировано", dot: "#4A90E2", text: "text-[#4A90E2]" },
   edited: { label: "Отредактировано", dot: "#8B5CF6", text: "text-violet-700" },
-  draft: { label: "Черновик", dot: "#9CA3AF", text: "text-gray-600" },
+  draft: { label: "Не заполнен", dot: "#9CA3AF", text: "text-gray-600" },
   empty: { label: "Не заполнен", dot: "#D1D5DB", text: "text-gray-500" },
 };
 

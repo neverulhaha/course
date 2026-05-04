@@ -154,7 +154,6 @@ Deno.serve(async (request) => {
 
   if (upsertError) {
     console.warn("register-email profile upsert failed", upsertError.message);
-    // Пользователь уже создан и подтвержден. Профиль будет досоздан клиентом после входа.
   }
 
   return jsonResponse({ ok: true, user_id: created.user.id, provider: "email" });

@@ -182,7 +182,7 @@ function EditorShellIllustration() {
         >
           <div className="rounded h-1.5 mb-4" style={{ width: "70%", background: "rgba(255,255,255,0.1)" }} />
 
-          {/* QA pill */}
+          {/* Quality pill */}
           <div
             className="rounded-lg px-2.5 py-2 mb-3"
             style={{ background: "rgba(241,196,15,0.1)", border: "1px solid rgba(241,196,15,0.2)" }}
@@ -194,7 +194,7 @@ function EditorShellIllustration() {
             <div className="rounded h-1.5" style={{ width: "80%", background: "rgba(255,255,255,0.06)" }} />
           </div>
 
-          {/* AI actions */}
+          {/* Assistant actions */}
           {[1, 2, 3].map((i) => (
             <div
               key={i}
@@ -218,7 +218,7 @@ function EditorShellIllustration() {
               }}
             >
               <span style={{ fontSize: "14px", fontWeight: 700, color: "rgba(255,255,255,0.35)", lineHeight: 1 }}>—</span>
-              <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.3)", marginTop: "2px" }}>QA</span>
+              <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.3)", marginTop: "2px" }}>Кач.</span>
             </div>
           </div>
         </div>
@@ -533,8 +533,8 @@ export default function Landing() {
                   lineHeight: "var(--leading-relaxed)",
                 }}
               >
-                ИИ генерирует структуру и контент. Встроенный редактор, QA-проверка по 6 критериям
-                и история версий по содержательным изменениям курса.
+                ИИ генерирует структуру и материалы. Встроенный редактор, проверка качества
+                и история версий помогают контролировать результат.
               </p>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 mb-10 lg:mb-0">
@@ -575,10 +575,10 @@ export default function Landing() {
         <div className="w-full max-w-[900px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-y-8 gap-x-4 sm:gap-x-8 lg:gap-12 justify-items-center">
             {[
-              { value: "6",    label: "Критериев качества QA",    accent: "var(--brand-blue)" },
-              { value: "100%", label: "Проверка источников",      accent: "#2ECC71" },
-              { value: "∞",    label: "Версий с откатом",         accent: "#F1C40F" },
-              { value: "AI",   label: "Генерация структуры",      accent: "var(--brand-blue)" },
+              { value: "✓", label: "Проверка качества",      accent: "var(--brand-blue)" },
+              { value: "✓", label: "Работа по источнику",    accent: "#2ECC71" },
+              { value: "✓", label: "История версий",         accent: "#F1C40F" },
+              { value: "✓", label: "Генерация структуры",    accent: "var(--brand-blue)" },
             ].map(({ value, label, accent }) => (
               <div key={label} className="text-center px-1 min-w-0 max-w-[11rem] sm:max-w-none">
                 <p
@@ -660,7 +660,7 @@ export default function Landing() {
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {[
                   "ИИ строит структуру курса по вашей теме",
-                  "Автоматическая QA-проверка по 6 критериям",
+                  "Автоматическая проверка качества",
                   "Полная история версий с откатом",
                   "Верификация каждого блока по источнику",
                 ].map((text) => (
@@ -712,19 +712,19 @@ export default function Landing() {
               <Step
                 n="1"
                 title="Задайте тему и параметры"
-                desc="Укажите тему, уровень, цель и длительность курса. Можно также загрузить исходные материалы."
+                desc="Укажите тему, уровень, цель и длительность курса. При необходимости добавьте текстовый источник."
               />
               <Step
                 n="2"
                 title="ИИ генерирует структуру"
-                desc="Система создаёт модули, уроки и цели обучения. Вы получаете полноценный план курса за секунды."
+                desc="Система создаёт модули, уроки и цели обучения. После генерации вы получаете готовую структуру курса."
               />
             </div>
             <div>
               <Step
                 n="3"
                 title="Редактируйте и улучшайте"
-                desc="Встроенный редактор с AI-ассистентом. QA-проверка выявляет проблемы и предлагает решения."
+                desc="Встроенный редактор с ИИ-помощником. Проверка качества выявляет проблемы и предлагает решения."
               />
               <Step
                 n="4"
@@ -759,17 +759,17 @@ export default function Landing() {
             <FeatureCard
               icon={Sparkles}
               title="ИИ-генерация"
-              desc="Автоматическое создание структуры, контента уроков, примеров и практических заданий."
+              desc="Автоматическое создание структуры, материалов уроков, примеров и практических заданий."
             />
             <FeatureCard
               icon={FileText}
               title="Умный редактор"
-              desc="3-колоночный редактор с деревом модулей, редактором блоков и AI-панелью помощника."
+              desc="Редактор с деревом модулей, блоками урока и панелью ИИ-помощника."
             />
             <FeatureCard
               icon={Shield}
-              title="QA-система"
-              desc="Автоматическая проверка по 6 критериям: структура, связность, сложность, соответствие целям."
+              title="Проверка качества"
+              desc="Автоматическая проверка структуры, связности, уровня сложности и соответствия целям."
               accent="#F1C40F"
             />
             <FeatureCard
@@ -786,7 +786,7 @@ export default function Landing() {
             <FeatureCard
               icon={Layers}
               title="По источникам"
-              desc="Загрузите PDF, ссылки или текст — ИИ создаст курс строго на основе ваших материалов."
+              desc="Добавьте текстовый источник — ИИ создаст курс на основе ваших материалов."
             />
           </div>
         </div>
@@ -822,14 +822,14 @@ export default function Landing() {
                 className="mb-8"
                 style={{ fontSize: "var(--text-sm)", color: "var(--gray-500)", lineHeight: "var(--leading-relaxed)" }}
               >
-                Три панели: дерево структуры, холст контента и панель ИИ-ассистента. Каждый блок
-                верифицируется по источникам и проверяется QA-системой в реальном времени.
+                Три панели: дерево структуры, область урока и панель ИИ-помощника. Каждый блок
+                можно проверить по источникам и улучшить прямо в редакторе.
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 {[
-                  { icon: Zap,       text: "AI перегенерирует блок по одному клику" },
-                  { icon: Shield,    text: "QA-замечания прямо в редакторе" },
-                  { icon: RefreshCw, text: "Автосохранение черновика и история версий-снимков" },
+                  { icon: Zap,       text: "ИИ перегенерирует выбранный блок" },
+                  { icon: Shield,    text: "Замечания по качеству прямо в редакторе" },
+                  { icon: RefreshCw, text: "История версий для важных изменений" },
                 ].map(({ icon: Icon, text }) => (
                   <div key={text} className="flex items-center gap-3">
                     <div
@@ -876,26 +876,26 @@ export default function Landing() {
               {
                 icon: Zap,
                 accent: "var(--brand-blue)",
-                title: "В 10× быстрее",
-                desc: "Курс, на создание которого уходили недели, теперь генерируется за минуты. ИИ берёт на себя рутинную работу.",
-                stat: "~5 мин",
-                statLabel: "на генерацию плана",
+                title: "Быстрее ручной подготовки",
+                desc: "ИИ берёт на себя рутинную работу: структуру, первичное наполнение, задания и варианты улучшений.",
+                stat: "ИИ",
+                statLabel: "помощник автора",
               },
               {
                 icon: Shield,
                 accent: "#F1C40F",
                 title: "Высокое качество",
-                desc: "Автоматическая проверка по 6 критериям гарантирует, что каждый урок соответствует стандартам.",
-                stat: "6",
-                statLabel: "критериев QA",
+                desc: "Проверка качества помогает находить проблемы в структуре, связности, уровне и соответствии источнику.",
+                stat: "Контроль",
+                statLabel: "структуры и содержания",
               },
               {
                 icon: History,
                 accent: "#2ECC71",
                 title: "Полный контроль",
-                desc: "История версий, откат к любой точке, сравнение изменений. Ничего не теряется.",
-                stat: "100%",
-                statLabel: "сохранность данных",
+                desc: "История версий и откат помогают безопасно возвращаться к предыдущим состояниям курса.",
+                stat: "Версии",
+                statLabel: "откат изменений",
               },
             ].map(({ icon: Icon, accent, title, desc, stat, statLabel }) => (
               <div
@@ -984,7 +984,7 @@ export default function Landing() {
               lineHeight: "var(--leading-relaxed)",
             }}
           >
-            Введите тему — и уже через минуту у вас будет готовый план курса с модулями, уроками и целями обучения.
+            Введите тему — и получите план курса с модулями, уроками и целями обучения после генерации.
           </p>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 w-full max-w-md sm:max-w-none mx-auto">

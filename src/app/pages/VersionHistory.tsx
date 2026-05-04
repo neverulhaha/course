@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { getCourseVersion, getCourseVersions, restoreCourseVersion, type CourseVersionDetails, type CourseVersionListItem } from "@/services/courseVersion.service";
 
+
+function versionChangeLabel(type: string | null | undefined) {
+  const t = (type ?? "").toLowerCase();
+  if (t.includes("restore") || t.includes("rollback")) return "Откат";
+  if (t.includes("quiz")) return "Квиз";
+  if (t.includes("qa") || t.includes("quality")) return "Проверка качества";
+  if (t.includes("plan") || t.includes("structure")) return "Структура";
+  if (t.includes("lesson")) return "Урок";
+  if (t.includes("content")) return "Материалы";
+  if (t.includes("generation") || t.includes("generated")) return "Генерация";
+  if (t.includes("edit") || t.includes("update")) return "Редактирование";
+  if (t.includes("creation") || t.includes("created") || t.includes("initial")) return "Создание";
+  return "Изменение";
+}
+
 function getCourseIdFromLocation() {
   const params = new URLSearchParams(window.location.search);
   const fromQuery = params.get("courseId") ?? params.get("course_id");
@@ -59,7 +74,7 @@ export default function VersionHistoryPage() {
     <main className="mx-auto max-w-6xl p-6 space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">Версии курса</h1>
-        <p className="text-sm text-slate-500">История изменений, QA-оценки и откат к сохранённым версиям.</p>
+        <p className="text-sm text-slate-500">История изменений, оценки качества и откат к сохранённым версиям.</p>
       </header>
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
       <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
@@ -67,16 +82,16 @@ export default function VersionHistoryPage() {
           {versions.map((v) => (
             <div key={v.id} className="flex items-center justify-between gap-4 p-4">
               <button className="text-left" onClick={() => openVersion(v.id)}>
-                <div className="font-medium">v{v.version_number} · {v.change_type} {v.is_current ? "· текущая" : ""}</div>
+                <div className="font-medium">v{v.version_number} · {versionChangeLabel(v.change_type)} {v.is_current ? "· текущая" : ""}</div>
                 <div className="text-sm text-slate-500">{v.change_description ?? "Без описания"}</div>
-                <div className="text-xs text-slate-400">{new Date(v.created_at).toLocaleString()} · QA: {v.qa_score ?? "—"}</div>
+                <div className="text-xs text-slate-400">{new Date(v.created_at).toLocaleString()} · Качество: {v.qa_score ?? "—"}</div>
               </button>
               <button disabled={busy || v.is_current} onClick={() => handleRestore(v)} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">Откатить</button>
             </div>
           ))}
         </section>
         <aside className="rounded-2xl border p-5">
-          {selected ? <VersionDetails version={selected} /> : <p className="text-slate-500">Выберите версию, чтобы посмотреть детали snapshot.</p>}
+          {selected ? <VersionDetails version={selected} /> : <p className="text-slate-500">Выберите версию, чтобы посмотреть состав сохранённого состояния.</p>}
         </aside>
       </div>
     </main>
@@ -92,7 +107,7 @@ function VersionDetails({ version }: { version: CourseVersionDetails }) {
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <Metric label="Модулей" value={s.modules?.length ?? 0} />
         <Metric label="Уроков" value={s.lessons?.length ?? 0} />
-        <Metric label="Контента" value={s.lesson_contents?.length ?? 0} />
+        <Metric label="Материалов" value={s.lesson_contents?.length ?? 0} />
         <Metric label="Квизов" value={s.quizzes?.length ?? 0} />
         <Metric label="Вопросов" value={s.questions?.length ?? 0} />
         <Metric label="Источников" value={s.sources?.length ?? 0} />

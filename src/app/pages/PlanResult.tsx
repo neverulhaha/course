@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Check, Edit, Sparkles, Plus, Clock, Target, Layers } from "lucide-react";
+import { Check, Sparkles, Clock, Target, Layers, BookOpen } from "lucide-react";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { LoadingState } from "../components/LoadingState";
 import { useAuth } from "@/hooks/useAuth";
@@ -160,11 +160,11 @@ export default function PlanResult() {
         backTo="/app"
         backLabel="Мои курсы"
         title="План курса готов"
-        subtitle="Проверьте структуру и продолжите генерацию контента"
+        subtitle="Проверьте структуру и продолжите наполнение уроков"
         badge={
           <span className="flex items-center gap-1.5 px-3 py-1 bg-[#2ECC71]/20 border border-[#2ECC71]/40 rounded-lg text-sm font-bold text-gray-700">
             <Check className="w-3.5 h-3.5 text-[#4A90E2]" />
-            ИИ завершил
+            Генерация завершена
           </span>
         }
       />
@@ -213,9 +213,6 @@ export default function PlanResult() {
                         <h3 className="text-xl font-bold text-gray-900">{module.title}</h3>
                         <span className="text-sm text-gray-600 font-medium">{module.lessons.length} уроков</span>
                       </div>
-                      <button className="p-2 hover:bg-white rounded-lg transition-colors" title="Редактировать модуль">
-                        <Edit className="w-5 h-5 text-gray-600" />
-                      </button>
                     </div>
                   </div>
 
@@ -239,9 +236,6 @@ export default function PlanResult() {
                               </span>
                             </div>
                           </div>
-                          <button className="opacity-0 group-hover:opacity-100 p-2 hover:bg-gray-100 rounded-lg transition-all" title="Редактировать урок">
-                            <Edit className="w-4 h-4 text-gray-600" />
-                          </button>
                         </div>
                       </div>
                     ))}
@@ -249,12 +243,6 @@ export default function PlanResult() {
                 </div>
               ))}
             </div>
-
-            {/* Add Module Button */}
-            <button className="w-full px-6 py-5 bg-white border-2 border-dashed border-gray-300 text-gray-700 rounded-2xl font-semibold hover:bg-gray-50 hover:border-[#4A90E2] hover:text-[#4A90E2] transition-all flex items-center justify-center gap-3 group">
-              <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-              Добавить модуль
-            </button>
           </div>
 
           {/* Sidebar - Actions */}
@@ -268,18 +256,16 @@ export default function PlanResult() {
                   className="flex items-center justify-center gap-2 w-full px-5 py-4 bg-[#4A90E2] text-white rounded-xl font-bold hover:bg-[#1E3A5F] transition-all shadow-xl shadow-[#4A90E2]/30 hover:shadow-2xl hover:shadow-[#4A90E2]/40"
                 >
                   <Sparkles className="w-5 h-5" />
-                  Сгенерировать контент
+                  Открыть редактор
                 </Link>
 
-                <button className="flex items-center justify-center gap-2 w-full px-5 py-4 bg-white border-2 border-gray-200 text-gray-900 rounded-xl font-semibold hover:bg-gray-50 transition-all">
-                  <Edit className="w-5 h-5" />
-                  Редактировать план
-                </button>
-
-                <button className="flex items-center justify-center gap-2 w-full px-5 py-4 bg-white border-2 border-gray-200 text-gray-900 rounded-xl font-semibold hover:bg-gray-50 transition-all">
-                  <Plus className="w-5 h-5" />
-                  Сохранить как черновик
-                </button>
+                <Link
+                  to={`/learn/${courseId}`}
+                  className="flex items-center justify-center gap-2 w-full px-5 py-4 bg-white border-2 border-gray-200 text-gray-900 rounded-xl font-semibold hover:bg-gray-50 transition-all"
+                >
+                  <BookOpen className="w-5 h-5" />
+                  Перейти к обучению
+                </Link>
               </div>
 
               <hr className="my-6 border-gray-200" />
@@ -305,7 +291,7 @@ export default function PlanResult() {
               </div>
               <h4 className="font-bold text-gray-900 mb-3">Что дальше?</h4>
               <p className="text-sm text-gray-700 leading-relaxed">
-                Проверьте структуру курса и нажмите «Сгенерировать контент» чтобы создать уроки и практические задания.
+                Проверьте структуру курса, затем откройте редактор для наполнения уроков и настройки материалов.
               </p>
             </div>
           </div>

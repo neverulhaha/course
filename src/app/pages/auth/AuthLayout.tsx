@@ -6,15 +6,15 @@ import { BrandWordmark } from "@/app/components/Brand";
 /* ── Constants ───────────────────────────────────────────── */
 
 const FEATURES = [
-  "ИИ генерирует структуру курса за минуты",
-  "Автоматическая QA-проверка по 6 критериям",
+  "ИИ помогает быстро создать структуру курса",
+  "Автоматическая проверка качества",
   "Полная история версий с откатом",
 ];
 
 const STATS = [
-  { value: "87",   label: "QA-балл"   },
-  { value: "6",    label: "критериев" },
-  { value: "∞",    label: "версий"    },
+  { value: "ИИ", label: "генерация" },
+  { value: "✓",  label: "проверка" },
+  { value: "↺",  label: "версии" },
 ];
 
 /* ── Reusable form card ──────────────────────────────────── */
@@ -236,7 +236,7 @@ export function AuthLayout({ heading, tagline, children }: AuthLayoutProps) {
             className="vs-section-label"
             style={{ color: "rgba(255,255,255,0.2)", marginBottom: "12px" }}
           >
-            Платформа в цифрах
+            Возможности платформы
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
             {STATS.map(({ value, label }) => (
