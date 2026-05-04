@@ -159,7 +159,7 @@ export function validateCreateCourseFormForSubmit(form: CreateCourseFormValues):
   if (form.topic.trim().length <= 2) return "Укажите тему курса (минимум 3 символа)";
   if (form.type === "source") {
     if (form.sourceType !== "text") {
-      return "Для MVP поддерживается только текстовый источник. Ссылки и файлы будут добавлены позже.";
+      return "Выбранный тип источника недоступен. Используйте текстовый источник.";
     }
 
     const sourceLength = form.sourceContent.trim().length;

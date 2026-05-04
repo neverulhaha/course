@@ -1,9 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import type { ProfileRow } from "@/types/database";
 
-/**
- * Отображаемое имя: приоритет public.profiles.full_name, затем user_metadata, затем email.
- */
 export function displayName(user: User, profile?: ProfileRow | null): string {
   if (profile?.full_name?.trim()) return profile.full_name.trim();
   const meta = user.user_metadata ?? {};

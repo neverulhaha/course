@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
@@ -590,7 +590,6 @@ function StreakCard({ streak }: { streak: number }) {
           <p className="text-[11px]" style={{ color: "var(--gray-400)" }}>текущая серия</p>
         </div>
         <div className="ml-auto max-w-full shrink-0 text-[10px] sm:ml-auto" style={{ color: "var(--gray-400)" }}>
-          {/* TODO: серия дней из audit_logs / отдельной аналитики, если появится в БД */}
         </div>
       </div>
     </div>
@@ -695,7 +694,7 @@ export default function ProgressDashboard() {
         {
           emoji: "🔥",
           title: "Серия занятий",
-          description: "Серия дней подряд (нет данных в БД)",
+          description: "Серия дней подряд",
           earned: false,
         },
         {

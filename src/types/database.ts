@@ -1,12 +1,6 @@
-/**
- * Строки таблиц public.* (Supabase Postgres). Идентификаторы пользователей — UUID из auth.users.
- * Не использовать public.users / refresh_tokens / password_reset_tokens (legacy).
- */
-
 import type { CourseStatus } from "@/entities/course/courseStatus";
 import type { GenerationDepth } from "@/entities/course/types";
 
-/** public.profiles — расширение auth.users (имя, роль, email/provider для MVP auth-flow). */
 export interface ProfileRow {
   id: string;
   email?: string | null;

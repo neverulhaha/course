@@ -61,7 +61,6 @@ export const COURSE_STATUS_UI: Record<
 };
 
 const LEGACY_STATUS_MAP: Record<string, CourseStatus> = {
-  // прежние значения фронта / моки дашборда
   generated: "partial",
   "needs-review": "partial",
   "has-issues": "partial",

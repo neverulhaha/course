@@ -279,11 +279,6 @@ export async function fetchCourseVersions(courseId: string): Promise<{
 }
 
 
-// -----------------------------------------------------------------------------
-// QA / restore-version MVP API
-// These exports are kept in the same service so older editor code can still use
-// createCourseVersionSnapshot / ensureFirstCourseVersionIfNeeded.
-// -----------------------------------------------------------------------------
 export type CourseVersionListItem = {
   id: string;
   course_id: string;

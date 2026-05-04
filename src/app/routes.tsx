@@ -14,15 +14,12 @@ const CreateCourse    = lazy(() => import("./pages/CreateCourse"));
 const CreateFromSource= lazy(() => import("./pages/CreateFromSource"));
 const PlanResult      = lazy(() => import("./pages/PlanResult"));
 const CourseEditor    = lazy(() => import("./pages/CourseEditor"));
-const LessonEditor    = lazy(() => import("./pages/LessonEditor"));
-const QuizEditor      = lazy(() => import("./pages/QuizEditor"));
 const QAReport          = lazy(() => import("./pages/QAReport"));
 const VersionHistory    = lazy(() => import("./pages/VersionHistory"));
 const ProgressDashboard = lazy(() => import("./pages/ProgressDashboard"));
 const UserProfile       = lazy(() => import("./pages/UserProfile"));
 const Settings          = lazy(() => import("./pages/Settings"));
 const CoursePlayer    = lazy(() => import("./pages/CoursePlayer"));
-const Assignment      = lazy(() => import("./pages/Assignment"));
 const QuizTaking      = lazy(() => import("./pages/QuizTaking"));
 
 function Lazy({ children }: { children: React.ReactNode }) {
@@ -53,8 +50,6 @@ export const router = createBrowserRouter([
       { path: "source/create", element: <Navigate to="/app/create-source" replace /> },
       { path: "plan/:courseId", element: <Lazy><PlanResult /></Lazy> },
       { path: "editor/:courseId", element: <Lazy><CourseEditor /></Lazy> },
-      { path: "editor/:courseId/lesson/:lessonId", element: <Lazy><LessonEditor /></Lazy> },
-      { path: "editor/:courseId/quiz/:quizId", element: <Lazy><QuizEditor /></Lazy> },
       { path: "qa/:courseId", element: <Lazy><QAReport /></Lazy> },
       { path: "versions/:courseId", element: <Lazy><VersionHistory /></Lazy> },
       { path: "progress", element: <Lazy><ProgressDashboard /></Lazy> },
@@ -64,6 +59,5 @@ export const router = createBrowserRouter([
   },
   { path: "/learn/:courseId", element: <ProtectedLazy><CoursePlayer /></ProtectedLazy> },
   { path: "/learn/:courseId/lesson/:lessonId", element: <ProtectedLazy><CoursePlayer /></ProtectedLazy> },
-  { path: "/learn/:courseId/assignment/:assignmentId", element: <ProtectedLazy><Assignment /></ProtectedLazy> },
   { path: "/learn/:courseId/quiz/:quizId", element: <ProtectedLazy><QuizTaking /></ProtectedLazy> },
 ]);

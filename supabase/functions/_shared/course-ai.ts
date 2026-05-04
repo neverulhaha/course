@@ -311,7 +311,7 @@ async function loadSources(db: SupabaseClient, course: Rec): Promise<SourceBundl
 
   const textSources = rows.filter((row) => clean(row.source_type).toLowerCase() === "text" || hasText(row.raw_text));
   if (textSources.length === 0) {
-    throw new AppError("SOURCE_NOT_FOUND", "Для MVP поддерживается текстовый источник. Текст источника не найден.", 400);
+    throw new AppError("SOURCE_NOT_FOUND", "Поддерживается только текстовый источник. Текст источника не найден.", 400);
   }
 
   const warnings: string[] = [];

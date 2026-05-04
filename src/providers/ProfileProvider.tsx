@@ -14,15 +14,11 @@ import type { ProfileRow } from "@/types/database";
 interface ProfileContextValue {
   profile: ProfileRow | null;
   loading: boolean;
-  /** Перечитать public.profiles после сохранения. */
   refresh: () => Promise<void>;
 }
 
 const ProfileContext = createContext<ProfileContextValue | null>(null);
 
-/**
- * Загружает public.profiles для текущего auth.users.id.
- */
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [profile, setProfile] = useState<ProfileRow | null>(null);

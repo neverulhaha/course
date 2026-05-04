@@ -100,10 +100,6 @@ export async function fetchLatestQaReport(courseId: string): Promise<{
 }
 
 
-// -----------------------------------------------------------------------------
-// QA MVP API used by the new QAReport page.
-// Old fetchLatestQaReport export above is intentionally preserved.
-// -----------------------------------------------------------------------------
 export type QaReport = {
   id: string;
   course_id: string;

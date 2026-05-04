@@ -1,5 +1,5 @@
--- MVP auth profile support.
--- Adds email/provider fields used by check-auth-email without exposing auth.users to the frontend.
+-- Auth profile support.
+-- Adds email/provider fields used by the authentication flow.
 -- Also keeps existing profile UI columns available (full_name/app_role).
 
 alter table if exists public.profiles

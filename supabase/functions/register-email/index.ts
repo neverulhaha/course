@@ -85,7 +85,7 @@ Deno.serve(async (request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) {
-    return errorResponse("AUTH_SETUP_ERROR", "Сервер регистрации не настроен: задайте SUPABASE_URL и SUPABASE_SERVICE_ROLE_KEY в Supabase secrets");
+    return errorResponse("AUTH_SETUP_ERROR", "Регистрация временно недоступна. Попробуйте позже.");
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {

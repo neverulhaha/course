@@ -1,4 +1,3 @@
-/** Поле в public.profiles (канонично). Не путать с legacy public.users. */
 export const PROFILE_ROLE_KEY = "app_role" as const;
 
 export const PROFILE_ROLES = [

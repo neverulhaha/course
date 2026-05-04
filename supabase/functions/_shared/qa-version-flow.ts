@@ -257,7 +257,7 @@ export function buildRuleBasedQa(snapshot: any) {
     }
   }
 
-  if (!quizzes.length) recommendations.push(rec("medium", "Добавить квизы", "В курсе нет квизов. Для MVP лучше добавить квиз хотя бы к ключевым урокам или итоговый квиз.", "quizzes"));
+  if (!quizzes.length) recommendations.push(rec("medium", "Добавить квизы", "В курсе нет квизов. Добавьте квиз к ключевым урокам или итоговый квиз.", "quizzes"));
   const sourceMode = String(snapshot.course?.generation_mode ?? "").includes("source") || String(snapshot.course?.source_mode ?? "").includes("source") || sources.length > 0;
   const onlySourceMode = sources.some((s: any) => s.only_source_mode);
   if (sourceMode && !sources.length) issues.push(issue("high", "source", "Нет источника", "Курс выглядит созданным по источнику, но sources пустой.", "course", snapshot.course?.id, "Добавьте источник или отключите source mode."));

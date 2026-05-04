@@ -50,8 +50,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ─── Product illustration (skeleton only, no sample metrics) ─ */
-
 function EditorShellIllustration() {
   const treeRows = [
     { status: "#2ECC71", active: false },

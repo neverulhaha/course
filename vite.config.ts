@@ -54,8 +54,6 @@ export default defineConfig(({ mode }) => {
         'Публичный anon/publishable key можно передать через одну из переменных:',
         formatKeys(SUPABASE_PUBLIC_KEY_KEYS),
         '',
-        'Важно: это НЕ SUPABASE_SERVICE_ROLE_KEY. Service role не должен попадать во frontend.',
-        'Для локальной проверки с Vercel env можно выполнить: npx vercel env pull .env.local',
       ].join('\n')
     )
   }

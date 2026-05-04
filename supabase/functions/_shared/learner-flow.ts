@@ -311,7 +311,7 @@ function validateQuizResponse(value: unknown, requestedCount: number): QuizAiRes
     const q = asRecord(raw);
     if (!q || !clean(q.question_text) || !clean(q.explanation)) throw new AppError("AI_RESPONSE_INVALID", `Вопрос ${index + 1} заполнен не полностью`, 502);
     const questionType = clean(q.question_type) || "single_choice";
-    if (questionType !== "single_choice") throw new AppError("AI_RESPONSE_INVALID", `Вопрос ${index + 1}: для MVP поддерживается single_choice`, 502);
+    if (questionType !== "single_choice") throw new AppError("AI_RESPONSE_INVALID", `Вопрос ${index + 1}: поддерживается только single_choice`, 502);
     const options = Array.isArray(q.options) ? q.options.map(asRecord).filter(Boolean) as Rec[] : [];
     if (options.length < 2) throw new AppError("AI_RESPONSE_INVALID", `Вопрос ${index + 1}: должно быть минимум 2 варианта ответа`, 502);
     const normalizedOptions = options.slice(0, 6).map((opt) => ({ answer_text: clean(opt.answer_text), is_correct: Boolean(opt.is_correct) }));

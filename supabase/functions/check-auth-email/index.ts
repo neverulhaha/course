@@ -66,8 +66,6 @@ Deno.serve(async (request) => {
   const profile = profiles?.[0];
   if (profile) return jsonResponse({ exists: true, provider: normalizeProvider(profile.provider) });
 
-  // Fallback for early MVP data where a Supabase Auth user exists but public.profiles was not created yet.
-  // TODO: add project-level rate limiting before using this as a high-traffic endpoint.
   try {
     const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (!authUsersError) {

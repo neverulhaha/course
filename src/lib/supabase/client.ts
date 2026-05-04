@@ -12,11 +12,6 @@ if (!url || !anonKey) {
   );
 }
 
-/**
- * Единственный браузерный клиент Supabase.
- * URL и ключ подставляются на этапе `vite build` / `vite` из переменных окружения (см. `vite.config.ts`).
- * `detectSessionInUrl` обрабатывает OAuth PKCE и ссылки из писем (подтверждение, сброс пароля).
- */
 export const supabase: SupabaseClient = createClient(url, anonKey, {
   auth: {
     persistSession: true,

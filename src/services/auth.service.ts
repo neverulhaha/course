@@ -10,7 +10,6 @@ export type AuthErrorCode =
   | "AUTH_EMAIL_USED_WITH_PASSWORD"
   | "AUTH_EMAIL_ALREADY_EXISTS"
   | "GOOGLE_UNAVAILABLE"
-  | "EMAIL_CONFIRMATION_ENABLED"
   | "AUTH_FAILED";
 
 export class AuthFlowError extends Error {
@@ -62,10 +61,6 @@ function providerFromSessionUser(user: { app_metadata?: Record<string, unknown>;
   return normalizeProvider(identities.find((i) => i.provider === "google" || i.provider === "email")?.provider);
 }
 
-function isAlreadyRegisteredResponse(data: Awaited<ReturnType<typeof supabase.auth.signUp>>["data"]) {
-  const identities = data.user?.identities;
-  return Boolean(data.user && Array.isArray(identities) && identities.length === 0 && !data.session);
-}
 
 function safeNextPath(nextPath?: string | null) {
   if (!nextPath || !nextPath.startsWith("/") || nextPath.startsWith("//") || nextPath.startsWith("/auth")) return DEFAULT_APP_PATH;
@@ -83,8 +78,8 @@ function mapSupabaseAuthError(message: string): AuthFlowError {
   if (lower.includes("invalid login credentials")) return new AuthFlowError("INVALID_CREDENTIALS", "Неверная почта или пароль.");
   if (lower.includes("email not confirmed") || lower.includes("email_not_confirmed")) {
     return new AuthFlowError(
-      "EMAIL_CONFIRMATION_ENABLED",
-      "Аккаунт создан, но Supabase не выдал сессию из-за подтверждения почты. Для MVP разверните Edge Function register-email или отключите Confirm email в Auth settings."
+      "AUTH_FAILED",
+      "Не удалось завершить регистрацию. Попробуйте ещё раз."
     );
   }
   if (lower.includes("user already registered") || lower.includes("already registered") || lower.includes("already exists")) {
@@ -124,7 +119,7 @@ async function registerEmailWithoutConfirmation(payload: { email: string; passwo
   if (error) {
     throw new AuthFlowError(
       "AUTH_FAILED",
-      "Не удалось вызвать сервер регистрации. Разверните Supabase Edge Function register-email и задайте для неё SUPABASE_SERVICE_ROLE_KEY.",
+      "Не удалось создать аккаунт. Попробуйте позже.",
       error.message
     );
   }
@@ -170,26 +165,8 @@ export async function signUpWithEmail({ email, password, passwordConfirm, name }
   if (emailCheck.exists && emailCheck.provider === "google") throw new AuthFlowError("AUTH_EMAIL_USED_WITH_GOOGLE", "Аккаунт с этой почтой уже создан через Google. Войдите через Google.");
   if (emailCheck.exists && emailCheck.provider === "email") throw new AuthFlowError("AUTH_EMAIL_ALREADY_EXISTS", "Аккаунт с этой почтой уже существует. Войдите в систему.");
 
-  try {
-    await registerEmailWithoutConfirmation({ email: normalizedEmail, password, name });
-    return await signInAfterRegistration(normalizedEmail, password, name);
-  } catch (err) {
-    // Если новая Edge Function ещё не развернута, оставляем fallback на стандартный Supabase signUp.
-    // При включенном Confirm email fallback не сможет выдать сессию — тогда покажем понятную причину.
-    if (err instanceof AuthFlowError && err.code !== "AUTH_FAILED") throw err;
-    console.warn("register-email fallback to supabase.auth.signUp", err instanceof Error ? err.message : err);
-  }
-
-  const { data, error } = await supabase.auth.signUp({
-    email: normalizedEmail,
-    password,
-    options: { data: { full_name: name?.trim() || undefined, display_name: name?.trim() || undefined, provider: "email" } },
-  });
-  if (error) throw mapSupabaseAuthError(error.message);
-  if (isAlreadyRegisteredResponse(data)) throw new AuthFlowError("AUTH_EMAIL_ALREADY_EXISTS", "Аккаунт с этой почтой уже существует. Войдите в систему.");
-  if (data.user) await upsertProfileForUser(data.user, { display_name: name?.trim() || null, provider: "email" });
-  if (data.user && !data.session) return signInAfterRegistration(normalizedEmail, password, name);
-  return data;
+  await registerEmailWithoutConfirmation({ email: normalizedEmail, password, name });
+  return await signInAfterRegistration(normalizedEmail, password, name);
 }
 
 export async function signInWithEmail({ email, password }: EmailPasswordPayload) {

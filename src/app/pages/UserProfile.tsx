@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   User as UserIcon,
@@ -6,8 +6,6 @@ import {
   CheckCircle2,
   LogOut,
   ChevronRight,
-  Bell,
-  Trash2,
   Check,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -214,7 +212,7 @@ function PersonalInfoSection() {
   };
 
   return (
-    <SectionCard title="Личные данные" subtitle="Имя и роль хранятся в public.profiles (id = auth.users.id).">
+    <SectionCard title="Личные данные" subtitle="Обновите имя и роль для персонализации интерфейса.">
       <div className="flex flex-col gap-4 sm:gap-4 md:gap-5">
         {error && (
           <p className="text-[12px] font-semibold" style={{ fontFamily: FONT, color: "#C0392B" }}>
@@ -296,7 +294,7 @@ function PersonalInfoSection() {
             ))}
           </select>
           <p className="text-[11px] leading-snug" style={{ fontFamily: FONT, color: "var(--gray-500)" }}>
-            Роль отражает, как вы пользуетесь платформой; на функции курсов это пока не влияет.
+            Роль помогает адаптировать интерфейс под ваш сценарий работы.
           </p>
         </div>
 
@@ -344,81 +342,17 @@ function SecuritySection() {
   return (
     <SectionCard
       title="Безопасность"
-      subtitle="Вход в сервис выполняется через Google — отдельного пароля к платформе нет."
+      subtitle="Управление входом и текущей сессией."
     >
       <p
         className="text-[13px] leading-relaxed"
         style={{ fontFamily: FONT, color: "var(--gray-600)" }}
       >
-        Управление доступом к аккаунту и паролем Google выполняется в настройках вашего Google-аккаунта. Смена пароля на этой странице не предусмотрена.
+        Для защиты аккаунта используйте надёжный пароль и выходите из профиля на общих устройствах.
       </p>
     </SectionCard>
   );
 }
-
-/* ─── Notifications (placeholder) ────────────────────────── */
-
-function NotificationsSection() {
-  const [enabled, setEnabled] = useState(true);
-
-  const toggles = [
-    { label: "Завершение генерации", sub: "Когда ИИ закончит создание курса", key: "gen" },
-    { label: "Результаты QA", sub: "После каждой проверки качества", key: "qa" },
-    { label: "Напоминания об уроках", sub: "Не пропускайте учебные сессии", key: "remind" },
-  ];
-
-  const [states, setStates] = useState<Record<string, boolean>>({
-    gen: true,
-    qa: true,
-    remind: false,
-  });
-
-  return (
-    <SectionCard title="Уведомления" subtitle="Настройте, что вы хотите получать">
-      <div className="flex flex-col gap-3 sm:gap-3">
-        {toggles.map(({ label, sub, key }) => (
-          <div
-            key={key}
-            className="flex flex-col gap-3 rounded-[10px] border border-[var(--border-xs)] bg-[var(--gray-50)] p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-3.5 sm:py-3"
-          >
-            <div className="min-w-0 flex-1 pr-0 sm:pr-2">
-              <p className="text-[13px] font-semibold leading-snug" style={{ fontFamily: FONT, color: "var(--gray-900)" }}>
-                {label}
-              </p>
-              <p className="mt-0.5 text-[11px] leading-relaxed" style={{ fontFamily: FONT, color: "var(--gray-500)" }}>
-                {sub}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setStates((s) => ({ ...s, [key]: !s[key] }))}
-              className="relative h-[21px] w-[38px] shrink-0 self-end touch-manipulation rounded-[11px] border-0 sm:ml-0 sm:self-center"
-              style={{
-                background: states[key] ? "var(--brand-blue)" : "var(--gray-200)",
-                cursor: "pointer",
-                transition: "background 0.2s",
-              }}
-              aria-pressed={states[key]}
-              aria-label={`${label}: ${states[key] ? "вкл" : "выкл"}`}
-            >
-              <span
-                className="absolute top-0.5 rounded-full bg-[var(--bg-surface)] shadow-sm transition-[left]"
-                style={{
-                  width: 17,
-                  height: 17,
-                  left: states[key] ? 19 : 2,
-                }}
-              />
-            </button>
-          </div>
-        ))}
-      </div>
-      <span style={{ display: "none" }}>{String(enabled)}</span>
-    </SectionCard>
-  );
-}
-
-/* ─── Account actions ─────────────────────────────────────── */
 
 function AccountActionsSection() {
   const { signOut } = useAuth();
@@ -461,33 +395,6 @@ function AccountActionsSection() {
           <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--gray-400)" }} />
         </button>
 
-        <button
-          type="button"
-          className="flex min-h-[52px] w-full touch-manipulation items-center justify-between gap-3 rounded-[10px] border border-transparent bg-transparent px-3.5 py-3 text-left transition-all sm:min-h-0 sm:py-3"
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(231,76,60,0.04)";
-            e.currentTarget.style.borderColor = "rgba(231,76,60,0.15)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.borderColor = "transparent";
-          }}
-        >
-          <div className="flex min-w-0 items-center gap-2.5 sm:gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "rgba(231,76,60,0.08)" }}>
-              <Trash2 className="h-[15px] w-[15px] shrink-0" style={{ color: "#E74C3C" }} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[13px] font-semibold leading-snug" style={{ fontFamily: FONT, color: "#E74C3C" }}>
-                Удалить аккаунт
-              </p>
-              <p className="text-[11px] leading-snug" style={{ fontFamily: FONT, color: "var(--gray-400)" }}>
-                Это действие необратимо
-              </p>
-            </div>
-          </div>
-          <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--gray-400)" }} />
-        </button>
       </div>
     </SectionCard>
   );
@@ -580,7 +487,7 @@ export default function UserProfile() {
                   color: "var(--brand-blue)",
                 }}
               >
-                <Bell className="h-2.5 w-2.5 shrink-0" />
+                <UserIcon className="h-2.5 w-2.5 shrink-0" />
                 {profileRoleLabel(roleValue)}
               </span>
               <span
@@ -603,7 +510,6 @@ export default function UserProfile() {
             <SecuritySection />
           </div>
           <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
-            <NotificationsSection />
             <AccountActionsSection />
           </div>
         </div>

@@ -10,7 +10,6 @@ import {
   MIN_TEXT_SOURCE_LENGTH,
   type CreateCourseFormValues,
   type CreateCourseGenerationMode,
-  type CreateCourseSourceType,
 } from "@/entities/course/createCourseDraft";
 import { GENERATION_DEPTH_OPTIONS, generationDepthLabel } from "@/entities/course/types";
 import {
@@ -19,8 +18,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Upload,
-  Link as LinkIcon,
   Target,
   Clock,
   Layers,
@@ -33,8 +30,6 @@ import {
 type CourseType = CreateCourseGenerationMode;
 type Level = "Начальный" | "Средний" | "Продвинутый";
 type Format = "Теория" | "Практика" | "Смешанный";
-type SourceType = CreateCourseSourceType;
-
 type FormData = CreateCourseFormValues;
 
 /* ─── Step map ────────────────────────────────────────────── */
@@ -319,40 +314,6 @@ function FieldLabel({ label, hint }: { label: string; hint?: string }) {
   );
 }
 
-function SourceTabBtn({
-  icon: Icon, label, desc, active, disabled = false, onClick,
-}: { icon: React.ElementType; label: string; desc: string; active: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      className="touch-manipulation w-full rounded-xl px-2 py-3 disabled:opacity-50 sm:px-2.5 sm:py-3.5"
-      style={{
-        display: "flex", flexDirection: "column", alignItems: "center",
-        cursor: disabled ? "not-allowed" : "pointer",
-        fontFamily: FONT, transition: "all 0.15s",
-        background: active ? "rgba(74,144,226,0.05)" : "var(--gray-50)",
-        border: `1.5px solid ${active ? "var(--brand-blue)" : "var(--border-md)"}`,
-      }}
-    >
-      <Icon
-        className="mb-1.5 size-5 shrink-0"
-        style={{ color: active ? "var(--brand-blue)" : "var(--gray-400)" }}
-      />
-      <span
-        style={{
-          fontWeight: 700, fontSize: "var(--text-xs)",
-          color: active ? "var(--brand-blue)" : "var(--gray-700)",
-        }}
-      >
-        {label}
-      </span>
-      <span style={{ fontSize: "10px", color: "var(--gray-400)", marginTop: 2 }}>{desc}</span>
-    </button>
-  );
-}
-
 /* ─── Step contents ───────────────────────────────────────── */
 
 function StepType({ data, update }: { data: FormData; update: (p: Partial<FormData>) => void }) {
@@ -452,26 +413,7 @@ function StepSource({ data, update }: { data: FormData; update: (p: Partial<Form
         subtitle="ИИ создаст курс на основе ваших материалов"
       />
       <div className="flex flex-col gap-4 sm:gap-5">
-        {/* Source type tabs */}
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-2.5">
-          {[
-            { value: "text" as SourceType, icon: FileText, label: "Текст",  desc: "Вставьте текст", disabled: false },
-            { value: "link" as SourceType, icon: LinkIcon, label: "Ссылка", desc: "Позже", disabled: true },
-            { value: "file" as SourceType, icon: Upload,   label: "Файл",   desc: "Позже", disabled: true },
-          ].map(({ value, icon, label, desc, disabled }) => (
-            <SourceTabBtn
-              key={value}
-              icon={icon}
-              label={label}
-              desc={desc}
-              active={data.sourceType === value}
-              disabled={disabled}
-              onClick={() => update({ sourceType: value })}
-            />
-          ))}
-        </div>
 
-        {/* Source input area */}
         {data.sourceType === "text" && (
           <div>
             <FieldLabel label="Исходный текст" />
@@ -488,60 +430,10 @@ function StepSource({ data, update }: { data: FormData; update: (p: Partial<Form
                 ? `${data.sourceContent.length} из ${MIN_TEXT_SOURCE_LENGTH} символов`
                 : `Минимум ${MIN_TEXT_SOURCE_LENGTH} символов`}
             </p>
-            <p style={{ fontFamily: FONT, fontSize: "11px", color: "var(--gray-500)", marginTop: 4 }}>
-              Для MVP используется текстовый источник. Ссылки и файлы будут подключены позже.
-            </p>
           </div>
         )}
 
-        {data.sourceType === "link" && (
-          <div>
-            <FieldLabel label="URL источника" />
-            <input
-              type="url"
-              className="vs-input min-h-11 w-full sm:min-h-12"
-              style={{ fontFamily: FONT }}
-              placeholder="https://example.com/material"
-              value={data.sourceUrl}
-              onChange={(e) => update({ sourceUrl: e.target.value })}
-            />
-            <p style={{ fontFamily: FONT, fontSize: "11px", color: "var(--gray-400)", marginTop: 6 }}>
-              Поддерживаются: веб-страницы, YouTube, Google Docs
-            </p>
-          </div>
-        )}
 
-        {data.sourceType === "file" && (
-          <div>
-            <FieldLabel label="Загрузить документ" />
-            <label
-              className="flex cursor-pointer flex-col items-center gap-2 rounded-[14px] px-4 py-7 transition-all sm:gap-2 sm:px-5 sm:py-8"
-              style={{
-                border: "1.5px dashed var(--border-md)",
-                background: "var(--gray-50)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "var(--brand-blue)";
-                (e.currentTarget as HTMLElement).style.background = "rgba(74,144,226,0.03)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "var(--border-md)";
-                (e.currentTarget as HTMLElement).style.background = "var(--gray-50)";
-              }}
-            >
-              <Upload className="w-6 h-6" style={{ color: "var(--gray-400)" }} />
-              <span style={{ fontFamily: FONT, fontWeight: 600, fontSize: "var(--text-sm)", color: "var(--gray-700)" }}>
-                Нажмите или перетащите файл
-              </span>
-              <span style={{ fontFamily: FONT, fontSize: "11px", color: "var(--gray-400)" }}>
-                PDF, DOCX, TXT — до 50 МБ
-              </span>
-              <input type="file" className="hidden" accept=".pdf,.docx,.txt" />
-            </label>
-          </div>
-        )}
-
-        {/* Strict source toggle */}
         <label
           className="flex cursor-pointer flex-col gap-3 rounded-xl border border-[var(--border-xs)] bg-[var(--gray-50)] p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-4"
         >
@@ -665,7 +557,7 @@ function StepReview({ data }: { data: FormData }) {
     { icon: Clock,    label: "Длительность", value: data.duration          },
     { icon: Target,   label: "Глубина",      value: generationDepthLabel(data.generationDepth) },
     { icon: Sparkles, label: "Формат",       value: data.format            },
-    ...(data.type === "source" ? [{ icon: FileText, label: "Источник", value: data.sourceType === "text" ? `${data.sourceContent.length} симв.` : data.sourceUrl || "Файл загружен" }] : []),
+    ...(data.type === "source" ? [{ icon: FileText, label: "Источник", value: `${data.sourceContent.length} симв.` }] : []),
   ];
 
   return (
