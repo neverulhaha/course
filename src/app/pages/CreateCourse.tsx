@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { createCourseDraft } from "@/services/courseCreation.service";
-import { generateCourse } from "@/services/aiGeneration.service";
+import { runCourseGenerationSession, type GenerationSessionSummary } from "@/services/aiGeneration.service";
 import {
   CREATE_COURSE_FORM_DEFAULT,
   mapCreateCourseFormToDraftInput,
@@ -630,6 +630,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
   const { user } = useAuth();
   const [stepIndex, setStepIndex] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState<GenerationSessionSummary | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [data, setData] = useState<FormData>({
     ...CREATE_COURSE_FORM_DEFAULT,
@@ -648,6 +649,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
     if (isLast) {
       if (!user?.id) return;
       setSubmitError(null);
+      setGenerationProgress(null);
       setCreating(true);
       void (async () => {
         const validationError = validateCreateCourseFormForSubmit(data);
@@ -663,10 +665,18 @@ function CourseCreationFlow({ initialType }: FlowProps) {
           setCreating(false);
           return;
         }
-        const generated = await generateCourse(id, { depth: data.generationDepth });
+        const generated = await runCourseGenerationSession(
+          id,
+          { depth: data.generationDepth },
+          (progress) => setGenerationProgress(progress),
+        );
         setCreating(false);
         if (generated.error) {
           navigate(`/app/plan/${id}`, { state: { generationError: generated.error } });
+          return;
+        }
+        if (generated.data?.status === "partially_completed") {
+          navigate(`/app/plan/${id}`, { state: { generationError: generated.data.last_error_message ?? "Курс создан частично" } });
           return;
         }
         navigate(`/app/plan/${id}`);
@@ -738,6 +748,25 @@ function CourseCreationFlow({ initialType }: FlowProps) {
           {renderStep()}
         </StepCard>
 
+        {creating && generationProgress && (
+          <div className="mt-4 rounded-xl border border-[var(--border-xs)] bg-[var(--bg-surface)] px-4 py-4 shadow-[var(--shadow-sm)]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-bold text-[var(--gray-900)]" style={{ fontFamily: FONT }}>
+                {generationProgress.progress.message || "Создаём курс"}
+              </p>
+              <span className="text-xs font-semibold text-[var(--gray-500)]" style={{ fontFamily: FONT }}>
+                {generationProgress.progress.completed_steps} / {Math.max(generationProgress.progress.total_steps, 1)}
+              </span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--gray-100)]">
+              <div
+                className="h-full rounded-full bg-[var(--brand-blue)] transition-all duration-300"
+                style={{ width: `${Math.max(4, Math.min(100, generationProgress.progress.percent || 4))}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {submitError && (
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
             {submitError}
@@ -768,7 +797,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
               style={{ opacity: creating || !user?.id || !ok ? 0.5 : 1, cursor: creating || !user?.id || !ok ? "not-allowed" : "pointer" }}
             >
               <Sparkles className="size-4 shrink-0" />
-              {creating ? "Создаём курс…" : "Сгенерировать курс"}
+              {creating ? generationProgress?.progress.message ?? "Создаём курс…" : "Сгенерировать курс"}
             </button>
           ) : (
             <button

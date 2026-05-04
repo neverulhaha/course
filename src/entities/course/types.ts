@@ -24,17 +24,17 @@ export const GENERATION_DEPTH_OPTIONS: ReadonlyArray<{
   {
     value: "plan",
     label: "Только план",
-    description: "Структура с модулями и уроками без контента",
+    description: "Структура с модулями и уроками без материалов",
   },
   {
     value: "plan_lessons",
     label: "План и уроки",
-    description: "Структура и содержание уроков; без полной доработки квизов и материалов",
+    description: "Структура и материалы всех уроков",
   },
   {
     value: "full",
     label: "Полный курс",
-    description: "Все уроки, объяснения, задания и квизы",
+    description: "Материалы уроков, задания, тест и проверка качества",
     badge: "Рекомендуется",
   },
 ];

@@ -60,7 +60,7 @@ async function invoke<T>(name: string, body: Rec): Promise<{ data: T | null; err
         // ignore
       }
     }
-    return { data: null, error: error.message || "Ошибка backend-функции" };
+    return { data: null, error: error.message || "Не удалось выполнить действие" };
   }
   const backendMessage = messageFromBackend(data);
   if (backendMessage) return { data: null, error: backendMessage };

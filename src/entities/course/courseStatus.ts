@@ -15,9 +15,9 @@
  * (`courseCreation.service`, `courseEditor.service` — sync/archive).
  */
 
-export type CourseStatus = "draft" | "plan" | "partial" | "ready" | "archived";
+export type CourseStatus = "draft" | "generating_plan" | "generating_lessons" | "generating_quizzes" | "qa_checking" | "plan" | "partial" | "ready" | "failed" | "archived";
 
-export const COURSE_STATUS_VALUES = ["draft", "plan", "partial", "ready", "archived"] as const satisfies readonly CourseStatus[];
+export const COURSE_STATUS_VALUES = ["draft", "generating_plan", "generating_lessons", "generating_quizzes", "qa_checking", "plan", "partial", "ready", "failed", "archived"] as const satisfies readonly CourseStatus[];
 
 export function isCourseStatus(v: string): v is CourseStatus {
   return (COURSE_STATUS_VALUES as readonly string[]).includes(v);
@@ -33,6 +33,30 @@ export const COURSE_STATUS_UI: Record<
     dot: "#8E9BAB",
     color: "#5C6B7A",
     bg: "rgba(142,155,171,0.08)",
+  },
+  generating_plan: {
+    label: "Создаём план",
+    dot: "#4A90E2",
+    color: "#4A90E2",
+    bg: "rgba(74,144,226,0.07)",
+  },
+  generating_lessons: {
+    label: "Готовим уроки",
+    dot: "#4A90E2",
+    color: "#4A90E2",
+    bg: "rgba(74,144,226,0.07)",
+  },
+  generating_quizzes: {
+    label: "Создаём тест",
+    dot: "#4A90E2",
+    color: "#4A90E2",
+    bg: "rgba(74,144,226,0.07)",
+  },
+  qa_checking: {
+    label: "Проверяем качество",
+    dot: "#4A90E2",
+    color: "#4A90E2",
+    bg: "rgba(74,144,226,0.07)",
   },
   plan: {
     label: "План готов",
@@ -51,6 +75,12 @@ export const COURSE_STATUS_UI: Record<
     dot: "#2ECC71",
     color: "#2ECC71",
     bg: "rgba(46,204,113,0.07)",
+  },
+  failed: {
+    label: "Ошибка создания",
+    dot: "#EF4444",
+    color: "#B91C1C",
+    bg: "rgba(239,68,68,0.08)",
   },
   archived: {
     label: "Архив",
@@ -88,7 +118,7 @@ export interface CourseContentMetrics {
  * Выводит статус по наполненности (без учёта `archived`).
  * Используется в `syncCourseStatusFromContent` для выравнивания БД с фактом; не подменяет собой `courses.status` в UI.
  */
-export function inferCourseStatusFromMetrics(m: CourseContentMetrics): Exclude<CourseStatus, "archived"> {
+export function inferCourseStatusFromMetrics(m: CourseContentMetrics): Exclude<CourseStatus, "archived" | "generating_plan" | "generating_lessons" | "generating_quizzes" | "qa_checking" | "failed"> {
   if (m.moduleCount === 0 && m.lessonCount === 0) return "draft";
   if (m.lessonCount === 0) return "plan";
   if (m.filledCount === 0) return "plan";

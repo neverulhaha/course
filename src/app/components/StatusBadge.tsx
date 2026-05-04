@@ -21,6 +21,30 @@ const STATUS_CONFIG: Record<
     colors: "bg-gray-100 text-gray-700 border-gray-300",
     iconColor: "text-gray-600",
   },
+  generating_plan: {
+    label: "Создаём план",
+    icon: Loader,
+    colors: "bg-[#4A90E2]/15 text-[#4A90E2] border-[#4A90E2]/30",
+    iconColor: "text-[#4A90E2]",
+  },
+  generating_lessons: {
+    label: "Готовим уроки",
+    icon: Loader,
+    colors: "bg-[#4A90E2]/15 text-[#4A90E2] border-[#4A90E2]/30",
+    iconColor: "text-[#4A90E2]",
+  },
+  generating_quizzes: {
+    label: "Создаём тест",
+    icon: Loader,
+    colors: "bg-[#4A90E2]/15 text-[#4A90E2] border-[#4A90E2]/30",
+    iconColor: "text-[#4A90E2]",
+  },
+  qa_checking: {
+    label: "Проверяем качество",
+    icon: Loader,
+    colors: "bg-[#4A90E2]/15 text-[#4A90E2] border-[#4A90E2]/30",
+    iconColor: "text-[#4A90E2]",
+  },
   plan: {
     label: "План готов",
     icon: Layers,
@@ -28,16 +52,22 @@ const STATUS_CONFIG: Record<
     iconColor: "text-[#4A90E2]",
   },
   partial: {
-    label: "Частично заполнен",
+    label: "Создан частично",
     icon: Loader,
     colors: "bg-amber-50 text-amber-800 border-amber-200",
     iconColor: "text-amber-600",
   },
   ready: {
-    label: "Готов",
+    label: "Курс готов",
     icon: CheckCircle2,
     colors: "bg-[#2ECC71]/20 text-gray-900 border-[#2ECC71]/40",
     iconColor: "text-[#4A90E2]",
+  },
+  failed: {
+    label: "Ошибка создания",
+    icon: Loader,
+    colors: "bg-red-50 text-red-800 border-red-200",
+    iconColor: "text-red-600",
   },
   archived: {
     label: "Архив",
