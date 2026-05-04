@@ -497,15 +497,19 @@ export async function restoreCourseVersion(courseId: string, versionId: string):
   const accessToken = sessionData.session?.access_token;
   if (!accessToken) throw new Error("Войдите в аккаунт и повторите действие");
 
+  // Важно: не передавать одновременно Authorization и authorization.
+  // Fetch объединяет одноимённые заголовки без учёта регистра в строку
+  // вида "Bearer <token>, Bearer <token>", из-за чего Supabase Auth
+  // считает сессию недействительной и возвращает 401.
+  const headers = new Headers();
+  headers.set("apikey", __SUPABASE_ANON_KEY__);
+  headers.set("authorization", `Bearer ${accessToken}`);
+  headers.set("content-type", "application/json");
+  headers.set("x-client-info", "course-ai-generator-web");
+
   const response = await fetch(`${__SUPABASE_URL__.replace(/\/+$/, "")}/functions/v1/restore-course-version`, {
     method: "POST",
-    headers: {
-      apikey: __SUPABASE_ANON_KEY__,
-      Authorization: `Bearer ${accessToken}`,
-      authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "x-client-info": "course-ai-generator-web",
-    },
+    headers,
     body: JSON.stringify({ course_id: courseId, version_id: versionId }),
   });
 

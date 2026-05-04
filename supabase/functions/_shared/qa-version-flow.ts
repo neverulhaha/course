@@ -78,10 +78,22 @@ export function createAdminClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+export function extractBearerToken(req: Request): string {
+  const raw = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  const firstBearer = raw
+    .split(",")
+    .map((part) => part.trim())
+    .find((part) => /^Bearer\s+/i.test(part));
+
+  const token = (firstBearer ?? raw).replace(/^Bearer\s+/i, "").trim();
+  if (!token || token.includes(",")) {
+    throw new AppError("UNAUTHORIZED", "Требуется авторизация", 401);
+  }
+  return token;
+}
+
 export async function getAuthUser(req: Request, supabaseAdmin: any) {
-  const auth = req.headers.get("Authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
-  if (!token) throw new AppError("UNAUTHORIZED", "Требуется авторизация", 401);
+  const token = extractBearerToken(req);
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data?.user) throw new AppError("UNAUTHORIZED", "Сессия недействительна", 401);
   return data.user;
