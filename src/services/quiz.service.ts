@@ -10,9 +10,18 @@ export type QuizTakingQuestion = {
   position: number;
   options: QuizTakingOption[];
 };
+export type QuizAttemptHistoryItem = {
+  id: string;
+  quiz_id: string;
+  score: number;
+  percent: number;
+  attempt_number: number;
+  created_at: string;
+};
 export type QuizTakingPayload = {
   quiz: { id: string; title: string; description: string | null; course_id?: string | null; lesson_id?: string | null };
   questions: QuizTakingQuestion[];
+  attempts: QuizAttemptHistoryItem[];
 };
 export type QuizSubmitResult = {
   quiz_id: string;
@@ -21,10 +30,12 @@ export type QuizSubmitResult = {
   percent: number;
   correct_count: number;
   total_questions: number;
+  attempt?: QuizAttemptHistoryItem & { result_data?: unknown };
   details: Array<{
     question_id: string;
     question_text: string;
     selected_option_ids: string[];
+    selected_answers?: { id: string; answer_text: string }[];
     correct_option_ids: string[];
     is_correct: boolean;
     explanation: string;
@@ -84,63 +95,8 @@ export async function generateCourseQuiz(courseId: string, questionsCount = 10, 
   });
 }
 
-export async function fetchQuizForTakingSecure(quizId: string): Promise<{ data: QuizTakingPayload | null; error: string | null }> {
-  const { data: quiz, error: quizError } = await supabase
-    .from("quizzes")
-    .select("id, title, description, course_id, lesson_id")
-    .eq("id", quizId)
-    .maybeSingle();
-  if (quizError) return { data: null, error: quizError.message };
-  const quizRec = asRecord(quiz);
-  if (!quizRec) return { data: null, error: "Квиз не найден" };
-
-  const { data: questions, error: questionsError } = await supabase
-    .from("questions")
-    .select("id, question_text, question_type, position")
-    .eq("quiz_id", quizId)
-    .order("position", { ascending: true });
-  if (questionsError) return { data: null, error: questionsError.message };
-
-  const resultQuestions: QuizTakingQuestion[] = [];
-  for (const q of questions ?? []) {
-    const qr = asRecord(q);
-    const questionId = String(qr?.id ?? "");
-    if (!questionId) continue;
-    const { data: options, error: optionsError } = await supabase
-      .from("answer_options")
-      .select("id, answer_text, position")
-      .eq("question_id", questionId)
-      .order("position", { ascending: true });
-    if (optionsError) return { data: null, error: optionsError.message };
-    resultQuestions.push({
-      id: questionId,
-      question_text: String(qr?.question_text ?? "Вопрос"),
-      question_type: String(qr?.question_type ?? "single_choice"),
-      position: Number(qr?.position ?? resultQuestions.length + 1),
-      options: (options ?? []).map((o) => {
-        const or = asRecord(o);
-        return {
-          id: String(or?.id ?? ""),
-          answer_text: String(or?.answer_text ?? ""),
-          position: Number(or?.position ?? 0),
-        };
-      }).filter((option) => option.id && option.answer_text),
-    });
-  }
-
-  return {
-    data: {
-      quiz: {
-        id: String(quizRec.id ?? ""),
-        title: String(quizRec.title ?? "Квиз"),
-        description: typeof quizRec.description === "string" ? quizRec.description : null,
-        course_id: typeof quizRec.course_id === "string" ? quizRec.course_id : null,
-        lesson_id: typeof quizRec.lesson_id === "string" ? quizRec.lesson_id : null,
-      },
-      questions: resultQuestions,
-    },
-    error: null,
-  };
+export async function getQuizForTaking(quizId: string): Promise<{ data: QuizTakingPayload | null; error: string | null }> {
+  return invoke<QuizTakingPayload>("get-quiz-for-taking", { quiz_id: quizId });
 }
 
 export async function submitQuizAttempt(

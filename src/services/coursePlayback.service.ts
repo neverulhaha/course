@@ -475,17 +475,14 @@ export async function fetchQuizForTaking(quizId: string): Promise<{ title: strin
     if (!qid) continue;
     const text = str(qrow?.question_text) ?? str(qrow?.body) ?? str(qrow?.text) ?? "Вопрос";
 
-    const { data: opts } = await supabase.from("answer_options").select("*").eq("question_id", qid).order("position", { ascending: true });
+    const { data: opts } = await supabase.from("answer_options").select("id, answer_text, position").eq("question_id", qid).order("position", { ascending: true });
 
     const optionTexts: string[] = [];
-    let correctIndex = 0;
-    let i = 0;
+    const correctIndex = -1;
     for (const o of opts ?? []) {
       const orow = asRecord(o);
       const t = str(orow?.answer_text) ?? str(orow?.text) ?? str(orow?.body) ?? str(orow?.label) ?? "";
       optionTexts.push(t);
-      if (orow?.is_correct === true) correctIndex = i;
-      i += 1;
     }
 
     questions.push({

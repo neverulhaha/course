@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { COURSE_QUIZ_PROMPT, LESSON_QUIZ_PROMPT, renderTemplate } from "./prompts/index.ts";
 
 type Action =
+  | "get-quiz-for-taking"
   | "generate-lesson-quiz"
   | "generate-course-quiz"
   | "submit-quiz-attempt"
@@ -585,6 +586,64 @@ async function loadQuizWithQuestions(db: SupabaseClient, quizId: string): Promis
   }
   return { quiz, questions, optionsByQuestion: map };
 }
+async function getQuizForTaking(req: Request, db: SupabaseClient, userId: string): Promise<Response> {
+  const body = await readJsonBody(req);
+  const quizId = clean(body.quiz_id ?? body.quizId);
+  if (!quizId) throw new AppError("INVALID_INPUT", "Нужно передать quiz_id", 400);
+
+  const { quiz, questions, optionsByQuestion } = await loadQuizWithQuestions(db, quizId);
+  const courseId = await resolveCourseIdForQuiz(db, quiz);
+  await getOwnedCourse(db, courseId, userId);
+
+  const safeQuestions = questions.map((q, index) => {
+    const qid = clean(q.id);
+    return {
+      id: qid,
+      question_text: clean(q.question_text) || `Вопрос ${index + 1}`,
+      question_type: clean(q.question_type) || "single_choice",
+      position: Number(q.position) || index + 1,
+      options: (optionsByQuestion.get(qid) ?? [])
+        .sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0))
+        .map((opt, optIndex) => ({
+          id: clean(opt.id),
+          answer_text: clean(opt.answer_text),
+          position: Number(opt.position) || optIndex + 1,
+        }))
+        .filter((opt) => opt.id && opt.answer_text),
+    };
+  });
+
+  const { data: attempts, error: attemptsError } = await db
+    .from("quiz_attempts")
+    .select("id, quiz_id, score, attempt_number, result_data, created_at")
+    .eq("quiz_id", quizId)
+    .eq("user_id", userId)
+    .order("attempt_number", { ascending: false });
+  if (attemptsError) throw new AppError("DATABASE_ERROR", "Не удалось загрузить историю попыток", 500, { error: attemptsError.message });
+
+  return jsonResponse({
+    quiz: {
+      id: clean(quiz.id),
+      title: clean(quiz.title) || "Квиз",
+      description: clean(quiz.description) || null,
+      course_id: clean(quiz.course_id) || courseId,
+      lesson_id: clean(quiz.lesson_id) || null,
+    },
+    questions: safeQuestions,
+    attempts: (attempts ?? []).map((row) => {
+      const rec = asRecord(row) ?? {};
+      return {
+        id: clean(rec.id),
+        quiz_id: clean(rec.quiz_id),
+        score: Number(rec.score) || 0,
+        percent: Number(rec.score) || 0,
+        attempt_number: Number(rec.attempt_number) || 0,
+        created_at: clean(rec.created_at),
+      };
+    }),
+  });
+}
+
 async function resolveCourseIdForQuiz(db: SupabaseClient, quiz: Rec): Promise<string> {
   const direct = clean(quiz.course_id);
   if (direct) return direct;
@@ -601,27 +660,42 @@ async function submitQuizAttempt(req: Request, db: SupabaseClient, userId: strin
   const { quiz, questions, optionsByQuestion } = await loadQuizWithQuestions(db, quizId);
   const courseId = await resolveCourseIdForQuiz(db, quiz);
   const course = await getOwnedCourse(db, courseId, userId);
+  const quizQuestionIds = new Set(questions.map((q) => clean(q.id)).filter(Boolean));
   const answerMap = new Map<string, string[]>();
   for (const item of answersRaw) {
     const rec = asRecord(item);
     const questionId = clean(rec?.question_id ?? rec?.questionId);
     const selected = Array.isArray(rec?.selected_option_ids) ? rec?.selected_option_ids : Array.isArray(rec?.selectedOptionIds) ? rec?.selectedOptionIds : [];
-    if (!questionId) throw new AppError("INVALID_ANSWERS", "Ответ содержит пустой question_id", 400);
-    answerMap.set(questionId, (selected as unknown[]).map(clean).filter(Boolean));
+    if (!questionId) throw new AppError("INVALID_ANSWERS", "Ответ содержит пустой вопрос", 400);
+    if (!quizQuestionIds.has(questionId)) throw new AppError("INVALID_ANSWERS", "Ответ относится к другому квизу", 400);
+    if (answerMap.has(questionId)) throw new AppError("INVALID_ANSWERS", "Один вопрос передан несколько раз", 400);
+    answerMap.set(questionId, Array.from(new Set((selected as unknown[]).map(clean).filter(Boolean))));
   }
   if (answerMap.size !== questions.length) throw new AppError("INVALID_ANSWERS", "Нужно ответить на все вопросы", 400);
   let correctCount = 0;
   const details: Rec[] = [];
   for (const q of questions) {
     const qid = clean(q.id);
+    const questionType = clean(q.question_type) || "single_choice";
     const options = optionsByQuestion.get(qid) ?? [];
     const correctIds = options.filter((opt) => opt.is_correct === true).map((opt) => clean(opt.id)).filter(Boolean).sort();
     const selectedIds = (answerMap.get(qid) ?? []).sort();
+    if (selectedIds.length === 0) throw new AppError("INVALID_ANSWERS", "Нужно ответить на все вопросы", 400);
+    if (questionType === "single_choice" && selectedIds.length !== 1) throw new AppError("INVALID_ANSWERS", "В каждом вопросе выберите один ответ", 400);
     const validOptionIds = new Set(options.map((opt) => clean(opt.id)).filter(Boolean));
     if (selectedIds.some((id) => !validOptionIds.has(id))) throw new AppError("INVALID_ANSWERS", "Выбран неизвестный вариант ответа", 400, { question_id: qid });
     const isCorrect = correctIds.length === selectedIds.length && correctIds.every((id, idx) => id === selectedIds[idx]);
     if (isCorrect) correctCount += 1;
-    details.push({ question_id: qid, question_text: clean(q.question_text), selected_option_ids: selectedIds, correct_option_ids: correctIds, is_correct: isCorrect, explanation: clean(q.explanation), correct_answers: options.filter((opt) => correctIds.includes(clean(opt.id))).map((opt) => ({ id: clean(opt.id), answer_text: clean(opt.answer_text) })) });
+    details.push({
+      question_id: qid,
+      question_text: clean(q.question_text),
+      selected_option_ids: selectedIds,
+      selected_answers: options.filter((opt) => selectedIds.includes(clean(opt.id))).map((opt) => ({ id: clean(opt.id), answer_text: clean(opt.answer_text) })),
+      correct_option_ids: correctIds,
+      correct_answers: options.filter((opt) => correctIds.includes(clean(opt.id))).map((opt) => ({ id: clean(opt.id), answer_text: clean(opt.answer_text) })),
+      is_correct: isCorrect,
+      explanation: clean(q.explanation),
+    });
   }
   const totalQuestions = questions.length;
   const percent = totalQuestions === 0 ? 0 : Math.round((correctCount / totalQuestions) * 100);
@@ -744,6 +818,7 @@ export function serveLearnerAction(action: Action): void {
     try {
       const db = serviceClient();
       const userId = await getUserId(req);
+      if (action === "get-quiz-for-taking") return await getQuizForTaking(req, db, userId);
       if (action === "generate-lesson-quiz") return await generateLessonQuiz(req, db, userId);
       if (action === "generate-course-quiz") return await generateCourseQuiz(req, db, userId);
       if (action === "submit-quiz-attempt") return await submitQuizAttempt(req, db, userId);
