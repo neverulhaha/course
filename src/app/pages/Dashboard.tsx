@@ -13,9 +13,11 @@ import {
   Edit,
   LayoutGrid,
   List,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { listDashboardCourses, type DashboardCourse } from "@/services/courseQuery.service";
+import { deleteCourse } from "@/services/courseDelete.service";
 import { COURSE_STATUS_UI, type CourseStatus } from "@/entities/course/courseStatus";
 
 /* ─── Types ───────────────────────────────────────────────── */
@@ -49,6 +51,24 @@ function mapDashboardCourse(c: DashboardCourse): Course {
 function getGreeting() {
   const h = new Date().getHours();
   return h < 12 ? "Доброе утро" : h < 18 ? "Добрый день" : "Добрый вечер";
+}
+
+function pluralRu(count: number, one: string, few: string, many: string) {
+  const abs = Math.abs(count);
+  const mod100 = abs % 100;
+  const mod10 = abs % 10;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
+
+function formatCourseCount(count: number) {
+  return `${count} ${pluralRu(count, "курс", "курса", "курсов")}`;
+}
+
+function formatLessonCount(count: number) {
+  return `${count} ${pluralRu(count, "урок", "урока", "уроков")}`;
 }
 
 function StatusPill({ status }: { status: CourseStatus }) {
@@ -206,7 +226,7 @@ function SectionHead({
 
 /* ─── Recent course card ──────────────────────────────────── */
 
-function RecentCard({ course }: { course: Course }) {
+function RecentCard({ course, onDelete, deleting }: { course: Course; onDelete: (course: Course) => void; deleting: boolean }) {
   const navigate = useNavigate();
   const barColor =
     course.progress === 100 ? "#2ECC71" : "var(--brand-blue)";
@@ -263,7 +283,7 @@ function RecentCard({ course }: { course: Course }) {
         </div>
         <div className="flex items-center gap-3">
           <span style={{ fontSize: "11px", color: "var(--gray-400)" }}>
-            {course.modules} мод. · {course.lessons} ур.
+            {course.modules} мод. · {formatLessonCount(course.lessons)}
           </span>
           <QaChip score={course.qaScore} />
         </div>
@@ -299,6 +319,16 @@ function RecentCard({ course }: { course: Course }) {
           <Play className="w-3 h-3 shrink-0" />
           Учиться
         </Link>
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={() => onDelete(course)}
+          className="vs-btn-ghost flex-1 min-[400px]:flex-none min-h-10 sm:min-h-0 justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ padding: "5px 10px", fontSize: "11px", color: "#DC2626" }}
+        >
+          <Trash2 className="w-3 h-3 shrink-0" />
+          {deleting ? "Удаление…" : "Удалить"}
+        </button>
       </div>
     </div>
   );
@@ -306,7 +336,7 @@ function RecentCard({ course }: { course: Course }) {
 
 /* ─── Course row (compact list) ───────────────────────────── */
 
-function CourseRow({ course }: { course: Course }) {
+function CourseRow({ course, onDelete, deleting }: { course: Course; onDelete: (course: Course) => void; deleting: boolean }) {
   const navigate = useNavigate();
   const barColor =
     course.progress === 100 ? "#2ECC71" : "var(--brand-blue)";
@@ -380,7 +410,7 @@ function CourseRow({ course }: { course: Course }) {
         >
           {course.lessons}
         </p>
-        <p style={{ fontSize: "11px", color: "var(--gray-400)" }}>уроков</p>
+        <p style={{ fontSize: "11px", color: "var(--gray-400)" }}>{pluralRu(course.lessons, "урок", "урока", "уроков")}</p>
       </div>
 
       {/* Progress — desktop */}
@@ -428,6 +458,16 @@ function CourseRow({ course }: { course: Course }) {
         >
           <Play className="w-3 h-3" />
         </Link>
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={() => onDelete(course)}
+          className="vs-btn-ghost min-h-10 min-w-10 sm:min-h-0 sm:min-w-0 justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ padding: "4px 8px", fontSize: "11px", color: "#DC2626" }}
+          aria-label="Удалить курс"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
       </div>
 
       <ChevronRight
@@ -528,6 +568,8 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<"cards" | "list">("list");
   const [courses, setCourses] = useState<Course[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -555,6 +597,24 @@ export default function Dashboard() {
 
   const recent = courses.slice(0, 2);
   const showEmpty = courses.length === 0 && !loadError;
+
+  const handleDeleteCourse = async (course: Course) => {
+    const confirmed = window.confirm(`Удалить курс «${course.title}»? Это действие нельзя отменить.`);
+    if (!confirmed) return;
+
+    setDeleteError(null);
+    setDeletingCourseId(course.id);
+    const result = await deleteCourse(course.id);
+    setDeletingCourseId(null);
+
+    if (result.error) {
+      setDeleteError(result.error.message);
+      return;
+    }
+
+    setCourses((items) => items.filter((item) => item.id !== course.id));
+  };
+
 
   return (
     <div
@@ -598,13 +658,16 @@ export default function Dashboard() {
                 className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5"
                 style={{ fontSize: "var(--text-xs)", color: "var(--gray-400)" }}
               >
-                <span>{courses.length} курса</span>
+                <span>{formatCourseCount(courses.length)}</span>
                 <span aria-hidden>·</span>
                 <span>Последнее изменение: {courses[0]?.lastModified ?? "—"}</span>
               </p>
             )}
             {loadError && (
               <p className="mt-1.5 text-[var(--text-xs)] text-red-600">Не удалось загрузить курсы: {loadError}</p>
+            )}
+            {deleteError && (
+              <p className="mt-1.5 text-[var(--text-xs)] text-red-600">Не удалось удалить курс: {deleteError}</p>
             )}
           </div>
 
@@ -652,7 +715,7 @@ export default function Dashboard() {
                 className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-3.5 min-w-0"
               >
                 {recent.map((c) => (
-                  <RecentCard key={c.id} course={c} />
+                  <RecentCard key={c.id} course={c} onDelete={handleDeleteCourse} deleting={deletingCourseId === c.id} />
                 ))}
 
                 {/* Quick start card */}
@@ -762,13 +825,13 @@ export default function Dashboard() {
               ) : viewMode === "list" ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {filtered.map((c) => (
-                    <CourseRow key={c.id} course={c} />
+                    <CourseRow key={c.id} course={c} onDelete={handleDeleteCourse} deleting={deletingCourseId === c.id} />
                   ))}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-3.5 min-w-0">
                   {filtered.map((c) => (
-                    <RecentCard key={c.id} course={c} />
+                    <RecentCard key={c.id} course={c} onDelete={handleDeleteCourse} deleting={deletingCourseId === c.id} />
                   ))}
                 </div>
               )}
