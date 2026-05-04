@@ -1,0 +1,142 @@
+/**
+ * Строки таблиц public.* (Supabase Postgres). Идентификаторы пользователей — UUID из auth.users.
+ * Не использовать public.users / refresh_tokens / password_reset_tokens (legacy).
+ */
+
+import type { CourseStatus } from "@/entities/course/courseStatus";
+import type { GenerationDepth } from "@/entities/course/types";
+
+/** public.profiles — расширение auth.users (имя, роль, email/provider для MVP auth-flow). */
+export interface ProfileRow {
+  id: string;
+  email?: string | null;
+  name?: string | null;
+  full_name?: string | null;
+  display_name?: string | null;
+  provider?: "email" | "google" | "unknown" | string | null;
+  app_role?: "student" | "teacher" | "author" | "learner" | "admin" | string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CourseRow {
+  id: string;
+  author_id: string;
+  title: string;
+  topic: string;
+  level: string;
+  goal: string | null;
+  duration: number | null;
+  format: string;
+  generation_mode: string;
+  source_mode: string | null;
+  language: string | null;
+  tone: string | null;
+  status: CourseStatus;
+  generation_depth: GenerationDepth;
+  current_version_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ModuleRow {
+  id: string;
+  course_id: string;
+  title: string;
+  position: number;
+  description: string | null;
+  practice_required: boolean;
+  estimated_duration: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface LessonRow {
+  id: string;
+  module_id: string;
+  title: string;
+  position: number;
+  objective: string | null;
+  summary: string | null;
+  estimated_duration: number | null;
+  learning_outcome: string | null;
+  content_status: "empty" | "generated" | "edited" | string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface LessonContentRow {
+  id: string;
+  lesson_id: string;
+  theory_text: string | null;
+  examples_text: string | null;
+  practice_text: string | null;
+  checklist_text: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface QuizRow {
+  id: string;
+  course_id: string | null;
+  lesson_id: string | null;
+  title: string;
+  description: string | null;
+  created_at?: string;
+}
+
+export interface QuestionRow {
+  id: string;
+  quiz_id: string;
+  question_text: string;
+  question_type: string;
+  explanation: string | null;
+  position: number;
+}
+
+export interface AnswerOptionRow {
+  id: string;
+  question_id: string;
+  answer_text: string;
+  is_correct: boolean;
+  position: number;
+}
+
+export interface QuizAttemptRow {
+  id: string;
+  quiz_id: string;
+  user_id: string;
+  score: number | null;
+  attempt_number: number;
+  result_data: Record<string, unknown> | null;
+  created_at?: string;
+}
+
+export interface LessonCompletionRow {
+  id: string;
+  lesson_id: string;
+  user_id: string;
+  completed_at?: string;
+}
+
+export interface AssignmentSubmissionRow {
+  id: string;
+  lesson_id: string;
+  user_id: string;
+  submission_text: string | null;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProgressRow {
+  id: string;
+  user_id: string;
+  course_id: string;
+  completed_lessons_count: number;
+  total_lessons_count: number;
+  completion_percent: number;
+  last_opened_lesson_id: string | null;
+  next_recommended_lesson_id: string | null;
+  updated_at?: string;
+}
