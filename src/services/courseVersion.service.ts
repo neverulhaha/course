@@ -220,14 +220,42 @@ export async function createCourseVersionSnapshot(
 }
 
 
+export const COURSE_VERSION_CHANGE_LABELS: Record<string, string> = {
+  plan_generated: "Сгенерирован план",
+  initial_generation_plan: "Сгенерирован план",
+  lesson_content_generated: "Сгенерирован урок",
+  initial_generation_content: "Сгенерирован контент курса",
+  course_content_generated: "Сгенерирован весь курс",
+  lesson_block_regenerated: "Перегенерирован блок урока",
+  manual_edit: "Ручное редактирование",
+  lesson_quiz_generated: "Сгенерирован квиз урока",
+  course_quiz_generated: "Сгенерирован итоговый квиз",
+  version_restored: "Восстановлена версия",
+  before_restore_backup: "Резервная версия перед откатом",
+};
+
+export function toCourseVersionChangeLabel(type: string | null | undefined): string {
+  const normalized = (type ?? "").trim().toLowerCase();
+  if (COURSE_VERSION_CHANGE_LABELS[normalized]) return COURSE_VERSION_CHANGE_LABELS[normalized];
+  if (normalized.includes("restore") || normalized.includes("rollback")) return "Восстановлена версия";
+  if (normalized.includes("quiz")) return "Изменён квиз";
+  if (normalized.includes("qa") || normalized.includes("quality")) return "Проверка качества";
+  if (normalized.includes("plan") || normalized.includes("structure")) return "Изменена структура";
+  if (normalized.includes("lesson") && normalized.includes("content")) return "Сгенерирован урок";
+  if (normalized.includes("content")) return "Изменён контент";
+  if (normalized.includes("edit") || normalized.includes("update")) return "Ручное редактирование";
+  if (normalized.includes("generation") || normalized.includes("generated")) return "Генерация";
+  return "Изменение курса";
+}
+
 function mapVersionType(raw: string | null): VersionChangeTypeUi {
   const t = (raw ?? "").toLowerCase();
-  if (t.includes("rollback")) return "rollback";
+  if (t.includes("restore") || t.includes("rollback")) return "rollback";
   if (t.includes("quiz")) return "quiz";
   if (t.includes("qa")) return "qa";
   if (t.includes("plan") || t.includes("structure")) return "structure";
   if (t.includes("generation") || t.includes("generated")) return "generation";
-  if (t.includes("content")) return "content";
+  if (t.includes("content") || t.includes("lesson")) return "content";
   if (t === "creation") return "creation";
   return "content";
 }
@@ -267,7 +295,7 @@ export async function fetchCourseVersions(courseId: string): Promise<{
       id: rowId,
       date: created ? formatRuDateTime(created) : "—",
       type: mapVersionType(str(o.change_type)),
-      description: str(o.change_description) ?? "",
+      description: str(o.change_description) ?? toCourseVersionChangeLabel(str(o.change_type)),
       author,
       changes: { added: 0, modified: 0, deleted: 0 },
       qaScore: num(o.qa_score),
@@ -277,7 +305,6 @@ export async function fetchCourseVersions(courseId: string): Promise<{
 
   return { courseTitle, versions, error: null };
 }
-
 
 export type CourseVersionListItem = {
   id: string;
@@ -291,13 +318,71 @@ export type CourseVersionListItem = {
   is_current?: boolean;
 };
 
-export type CourseVersionDetails = CourseVersionListItem & {
-  snapshot_data: unknown;
+export type CourseSnapshotView = {
+  schema_version?: number;
+  captured_at?: string;
+  course?: Record<string, unknown> | null;
+  modules?: unknown[];
+  lessons?: unknown[];
+  lesson_contents?: unknown[];
+  quizzes?: unknown[];
+  questions?: unknown[];
+  answer_options?: unknown[];
+  sources?: unknown[];
 };
 
-function parseEdgeFunctionError(error: any): Error {
-  const payload = error?.context?.json?.error ?? error?.error ?? error;
-  return new Error(payload?.message ?? error?.message ?? "Не удалось выполнить запрос");
+export type CourseVersionDetails = CourseVersionListItem & {
+  snapshot_data: CourseSnapshotView | null;
+};
+
+export type RestoreCourseVersionResult = {
+  restored_version?: CourseVersionDetails;
+  backup_version?: CourseVersionDetails;
+  restore_summary?: {
+    mode?: "exact" | "safe";
+    protected_lessons?: number;
+    protected_quizzes?: number;
+    kept_extra_lessons?: number;
+    kept_extra_quizzes?: number;
+  };
+};
+
+async function parseEdgeFunctionError(error: unknown): Promise<Error> {
+  const response = (error as { context?: unknown } | null)?.context;
+  if (response instanceof Response) {
+    try {
+      const payload = await response.clone().json();
+      const root = asRecord(payload);
+      const backendError = asRecord(root?.error);
+      const message = str(backendError?.message);
+      const code = str(backendError?.code);
+      if (message && code) return new Error(`${message} (${code})`);
+      if (message) return new Error(message);
+    } catch {
+      // fall through
+    }
+  }
+
+  const errorRecord = asRecord(error);
+  const payload = asRecord(errorRecord?.error);
+  const message = str(payload?.message) ?? str(errorRecord?.message);
+  return new Error(message ?? "Не удалось выполнить запрос");
+}
+
+function mapCourseVersionRow(row: unknown, courseId: string, currentVersionId: string | null): CourseVersionListItem {
+  const record = asRecord(row) ?? {};
+  const id = str(record.id) ?? "";
+  return {
+    id,
+    course_id: str(record.course_id) ?? courseId,
+    version_number: num(record.version_number) ?? 0,
+    change_type: str(record.change_type) ?? "unknown",
+    change_description: str(record.change_description) ?? null,
+    qa_score: num(record.qa_score),
+    created_at: str(record.created_at) ?? "",
+    created_by: str(record.created_by),
+    is_current: currentVersionId ? id === currentVersionId : false,
+  };
 }
 
 export async function getCourseVersions(courseId: string): Promise<CourseVersionListItem[]> {
@@ -318,24 +403,18 @@ export async function getCourseVersions(courseId: string): Promise<CourseVersion
   if (error) throw new Error(error.message);
 
   const currentVersionId = str(asRecord(course)?.current_version_id);
-  return (data ?? []).map((row) => {
-    const record = asRecord(row) ?? {};
-    const id = str(record.id) ?? "";
-    return {
-      id,
-      course_id: str(record.course_id) ?? courseId,
-      version_number: num(record.version_number) ?? 0,
-      change_type: str(record.change_type) ?? "unknown",
-      change_description: str(record.change_description) ?? null,
-      qa_score: num(record.qa_score),
-      created_at: str(record.created_at) ?? "",
-      created_by: str(record.created_by),
-      is_current: currentVersionId ? id === currentVersionId : false,
-    };
-  });
+  return (data ?? []).map((row) => mapCourseVersionRow(row, courseId, currentVersionId ?? null));
 }
 
 export async function getCourseVersion(courseId: string, versionId: string): Promise<CourseVersionDetails> {
+  const { data: course, error: courseError } = await supabase
+    .from("courses")
+    .select("current_version_id")
+    .eq("id", courseId)
+    .maybeSingle();
+
+  if (courseError) throw new Error(courseError.message);
+
   const { data, error } = await supabase
     .from("course_versions")
     .select("*")
@@ -346,26 +425,25 @@ export async function getCourseVersion(courseId: string, versionId: string): Pro
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Версия не найдена");
 
-  const record = asRecord(data) ?? {};
+  const currentVersionId = str(asRecord(course)?.current_version_id);
   return {
-    id: str(record.id) ?? versionId,
-    course_id: str(record.course_id) ?? courseId,
-    version_number: num(record.version_number) ?? 0,
-    change_type: str(record.change_type) ?? "unknown",
-    change_description: str(record.change_description) ?? null,
-    qa_score: num(record.qa_score),
-    created_at: str(record.created_at) ?? "",
-    created_by: str(record.created_by),
-    snapshot_data: record.snapshot_data ?? null,
+    ...mapCourseVersionRow(data, courseId, currentVersionId ?? null),
+    snapshot_data: (asRecord(data)?.snapshot_data as CourseSnapshotView | null | undefined) ?? null,
   };
 }
 
-export async function restoreCourseVersion(courseId: string, versionId: string): Promise<unknown> {
-  const { data, error } = await supabase.functions.invoke("restore-course-version", {
+export async function restoreCourseVersion(courseId: string, versionId: string): Promise<RestoreCourseVersionResult> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error("Войдите в аккаунт и повторите действие");
+
+  const { data, error } = await supabase.functions.invoke<RestoreCourseVersionResult | { error: unknown }>("restore-course-version", {
     body: { course_id: courseId, version_id: versionId },
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 
-  if (error) throw parseEdgeFunctionError(error);
-  if (data?.error) throw new Error(data.error.message);
-  return data;
+  if (error) throw await parseEdgeFunctionError(error);
+  const backendError = asRecord(data)?.error;
+  if (backendError) throw await parseEdgeFunctionError({ error: backendError });
+  return (data as RestoreCourseVersionResult) ?? {};
 }
