@@ -517,7 +517,8 @@ export default function MyCourses() {
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Поиск по названию или теме"
-                    className="vs-input h-12 w-full rounded-2xl pl-11 text-sm"
+                    className="vs-input h-12 w-full rounded-2xl text-sm"
+                    style={{ paddingLeft: "2.75rem" }}
                   />
                 </label>
 
@@ -526,7 +527,8 @@ export default function MyCourses() {
                   <select
                     value={statusFilter}
                     onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                    className="vs-input h-12 w-full appearance-none rounded-2xl pl-11 text-sm font-semibold"
+                    className="vs-input h-12 w-full appearance-none rounded-2xl text-sm font-semibold"
+                    style={{ paddingLeft: "2.75rem", paddingRight: "2.25rem" }}
                   >
                     {STATUS_FILTERS.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
@@ -543,7 +545,8 @@ export default function MyCourses() {
                   <select
                     value={sortMode}
                     onChange={(event) => setSortMode(event.target.value as SortMode)}
-                    className="vs-input h-12 w-full appearance-none rounded-2xl pl-11 text-sm font-semibold"
+                    className="vs-input h-12 w-full appearance-none rounded-2xl text-sm font-semibold"
+                    style={{ paddingLeft: "2.75rem", paddingRight: "2.25rem" }}
                   >
                     {SORT_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
