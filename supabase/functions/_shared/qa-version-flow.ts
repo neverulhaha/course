@@ -49,6 +49,16 @@ export function errorResponse(error: unknown) {
   return jsonResponse({ error: { code: "DATABASE_ERROR", message: "Внутренняя ошибка сервера", details: {} } }, 500);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function clean(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value).trim();
+  return "";
+}
+
 export async function readJson(req: Request) {
   if (req.method === "OPTIONS") return null;
   if (req.method !== "POST") throw new AppError("INVALID_INPUT", "Метод не поддерживается", 405);
@@ -309,30 +319,47 @@ export async function runAiQa(snapshot: any) {
     ],
     temperature: 0.2,
   };
-  if ((Deno.env.get("AI_USE_RESPONSE_FORMAT") ?? "true") !== "false") body.response_format = { type: "json_object" };
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, { status: response.status });
-  const json = await response.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) return null;
+  const provider = Deno.env.get("AI_PROVIDER")?.trim().toLowerCase() || "openai";
+  const responseFormatSetting = Deno.env.get("AI_USE_RESPONSE_FORMAT")?.trim().toLowerCase();
+  const useResponseFormatByDefault = responseFormatSetting === "true" || (!responseFormatSetting && provider !== "openrouter");
+
+  async function requestQa(useResponseFormat: boolean) {
+    const requestBody = { ...body };
+    if (useResponseFormat) requestBody.response_format = { type: "json_object" };
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const json = await response.json().catch(() => null);
+    if (!response.ok) throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, { status: response.status, message: clean(asRecord(asRecord(json)?.error)?.message), used_response_format: useResponseFormat });
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) return null;
+    try {
+      const parsed = JSON.parse(stripMarkdownJson(content));
+      if (!Array.isArray(parsed.issues) || !Array.isArray(parsed.recommendations)) return null;
+      return {
+        ...parsed,
+        structure_score: clampScore(parsed.structure_score),
+        coherence_score: clampScore(parsed.coherence_score),
+        level_match_score: clampScore(parsed.level_match_score),
+        source_alignment_score: clampScore(parsed.source_alignment_score),
+        total_score: clampScore(parsed.total_score),
+        fallback: false,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  if (!useResponseFormatByDefault) return await requestQa(false);
   try {
-    const parsed = JSON.parse(stripMarkdownJson(content));
-    if (!Array.isArray(parsed.issues) || !Array.isArray(parsed.recommendations)) return null;
-    return {
-      ...parsed,
-      structure_score: clampScore(parsed.structure_score),
-      coherence_score: clampScore(parsed.coherence_score),
-      level_match_score: clampScore(parsed.level_match_score),
-      source_alignment_score: clampScore(parsed.source_alignment_score),
-      total_score: clampScore(parsed.total_score),
-      fallback: false,
-    };
-  } catch {
-    return null;
+    return await requestQa(true);
+  } catch (error) {
+    const detailsText = JSON.stringify(error instanceof AppError ? error.details : {}).toLowerCase();
+    if (!detailsText.includes("response_format") && !detailsText.includes("json_object") && !detailsText.includes("structured") && !detailsText.includes("unsupported")) throw error;
+    console.warn("AI response_format is not supported by provider/model, retrying without it");
+    return await requestQa(false);
   }
 }
 

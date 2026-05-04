@@ -5,7 +5,7 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { LoadingState } from "../components/LoadingState";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchCoursePlanStructure, syncCourseStatusFromContent } from "@/services/courseEditor.service";
-import { generateCoursePlan } from "@/services/aiGeneration.service";
+import { runCourseGenerationSession } from "@/services/aiGeneration.service";
 
 export default function PlanResult() {
   const { courseId } = useParams();
@@ -60,7 +60,7 @@ export default function PlanResult() {
     setGeneratingPlan(true);
     setLoadError(null);
     setGenerationError(null);
-    const res = await generateCoursePlan(courseId);
+    const res = await runCourseGenerationSession(courseId, { depth: "plan" });
     setGeneratingPlan(false);
     if (res.error) {
       setGenerationError(res.error);

@@ -71,7 +71,8 @@ const AI_BASE_URL = Deno.env.get("AI_BASE_URL")?.trim().replace(/\/+$/, "") || "
 const AI_API_KEY = Deno.env.get("AI_API_KEY")?.trim() || Deno.env.get("OPENAI_API_KEY")?.trim() || "";
 const AI_MODEL = Deno.env.get("AI_MODEL")?.trim() || Deno.env.get("OPENAI_MODEL")?.trim() || "gpt-4o-mini";
 const AI_PROVIDER = Deno.env.get("AI_PROVIDER")?.trim().toLowerCase() || "openai";
-const AI_USE_RESPONSE_FORMAT = Deno.env.get("AI_USE_RESPONSE_FORMAT")?.trim().toLowerCase() !== "false";
+const AI_RESPONSE_FORMAT_SETTING = Deno.env.get("AI_USE_RESPONSE_FORMAT")?.trim().toLowerCase();
+const AI_USE_RESPONSE_FORMAT = AI_RESPONSE_FORMAT_SETTING === "true" || (!AI_RESPONSE_FORMAT_SETTING && AI_PROVIDER !== "openrouter");
 const MIN_SOURCE_LENGTH = Number.isFinite(Number(Deno.env.get("MIN_SOURCE_LENGTH")))
   ? Math.max(1, Number(Deno.env.get("MIN_SOURCE_LENGTH")))
   : 700;
@@ -451,42 +452,61 @@ async function callAi(systemPrompt: string, userPrompt: string): Promise<unknown
     headers["X-Title"] = Deno.env.get("OPENROUTER_APP_NAME")?.trim() || "Diplom Course Generator";
   }
 
-  const body: Rec = {
-    model: AI_MODEL,
-    temperature: 0.25,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-  };
+  async function requestJson(useResponseFormat: boolean): Promise<unknown> {
+    const body: Rec = {
+      model: AI_MODEL,
+      temperature: 0.25,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    };
 
-  if (AI_USE_RESPONSE_FORMAT) {
-    body.response_format = { type: "json_object" };
-  }
+    if (useResponseFormat) body.response_format = { type: "json_object" };
 
-  const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  const json = await response.json().catch(() => null);
-  if (!response.ok) {
-    const err = asRecord(asRecord(json)?.error);
-    throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, {
-      status: response.status,
-      message: clean(err?.message) || "AI API error",
-      type: clean(err?.type) || null,
+    const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
     });
+
+    const json = await response.json().catch(() => null);
+    if (!response.ok) {
+      const err = asRecord(asRecord(json)?.error);
+      throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, {
+        status: response.status,
+        message: clean(err?.message) || "AI API error",
+        type: clean(err?.type) || null,
+        used_response_format: useResponseFormat,
+      });
+    }
+
+    const choices = Array.isArray(asRecord(json)?.choices) ? (asRecord(json)?.choices as unknown[]) : [];
+    const content = clean(asRecord(asRecord(choices[0])?.message)?.content);
+    if (!content) {
+      throw new AppError("AI_RESPONSE_INVALID", "AI API вернул пустой ответ", 502, { used_response_format: useResponseFormat });
+    }
+
+    return parseAiJson(content);
   }
 
-  const choices = Array.isArray(asRecord(json)?.choices) ? (asRecord(json)?.choices as unknown[]) : [];
-  const content = clean(asRecord(asRecord(choices[0])?.message)?.content);
-  if (!content) {
-    throw new AppError("AI_RESPONSE_INVALID", "AI API вернул пустой ответ", 502);
-  }
+  if (!AI_USE_RESPONSE_FORMAT) return await requestJson(false);
 
-  return parseAiJson(content);
+  try {
+    return await requestJson(true);
+  } catch (error) {
+    const appError = error instanceof AppError ? error : null;
+    const detailsText = JSON.stringify(appError?.details ?? {}).toLowerCase();
+    const canRetryWithoutJsonMode = appError?.code === "GENERATION_FAILED" && (
+      detailsText.includes("response_format") ||
+      detailsText.includes("json_object") ||
+      detailsText.includes("structured") ||
+      detailsText.includes("unsupported")
+    );
+    if (!canRetryWithoutJsonMode) throw error;
+    console.warn("AI response_format is not supported by provider/model, retrying without it");
+    return await requestJson(false);
+  }
 }
 
 function buildSystemPrompt(course: Rec): string {
@@ -535,24 +555,18 @@ function validatePlanResponse(value: unknown): CoursePlan {
       }
 
       const lessons = Array.isArray(module.lessons) ? module.lessons : [];
-      if (!clean(module.title) || !clean(module.description) || lessons.length === 0) {
+      if (!clean(module.title) || lessons.length === 0) {
         throw new AppError("AI_RESPONSE_INVALID", `Модуль ${moduleIndex + 1} заполнен не полностью`, 502);
       }
 
       return {
         title: clean(module.title),
-        description: clean(module.description),
-        estimated_duration: module.estimated_duration ?? module.estimated_duration_minutes,
+        description: clean(module.description) || clean(module.summary) || clean(module.objective) || `Модуль посвящён теме: ${clean(module.title)}`,
+        estimated_duration: module.estimated_duration ?? module.estimated_duration_minutes ?? module.duration,
         practice_required: Boolean(module.practice_required),
         lessons: lessons.map((lessonRaw, lessonIndex) => {
           const lesson = asRecord(lessonRaw);
-          if (
-            !lesson ||
-            !clean(lesson.title) ||
-            !clean(lesson.objective) ||
-            !clean(lesson.summary) ||
-            !clean(lesson.learning_outcome)
-          ) {
+          if (!lesson || !clean(lesson.title)) {
             throw new AppError(
               "AI_RESPONSE_INVALID",
               `Урок ${lessonIndex + 1} в модуле ${moduleIndex + 1} заполнен не полностью`,
@@ -560,12 +574,17 @@ function validatePlanResponse(value: unknown): CoursePlan {
             );
           }
 
+          const title = clean(lesson.title);
+          const objective = clean(lesson.objective) || clean(lesson.goal) || clean(lesson.learning_goal) || `Разобраться с темой «${title}»`;
+          const summary = clean(lesson.summary) || clean(lesson.description) || clean(lesson.short_description) || objective;
+          const outcome = clean(lesson.learning_outcome) || clean(lesson.outcome) || clean(lesson.result) || clean((Array.isArray(lesson.learning_outcomes) ? lesson.learning_outcomes : [])[0]) || `Пользователь сможет применить материал урока «${title}».`;
+
           return {
-            title: clean(lesson.title),
-            objective: clean(lesson.objective),
-            summary: clean(lesson.summary),
-            estimated_duration: lesson.estimated_duration ?? lesson.estimated_duration_minutes,
-            learning_outcome: clean(lesson.learning_outcome),
+            title,
+            objective,
+            summary,
+            estimated_duration: lesson.estimated_duration ?? lesson.estimated_duration_minutes ?? lesson.duration,
+            learning_outcome: outcome,
           };
         }),
       };
@@ -597,7 +616,13 @@ function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
     ? record.blocks
     : Array.isArray(lessonRecord?.blocks)
       ? lessonRecord?.blocks as unknown[]
-      : [];
+      : Array.isArray(record.sections)
+        ? record.sections
+        : Array.isArray(record.content_blocks)
+          ? record.content_blocks
+          : Array.isArray(record.lesson_sections)
+            ? record.lesson_sections
+            : [];
 
   const theoryParts: string[] = [];
   const exampleParts: string[] = [];
@@ -607,7 +632,17 @@ function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
   for (const raw of blocksRaw) {
     const block = asRecord(raw);
     if (!block) continue;
-    const type = clean(block.type).toLowerCase();
+    const rawType = clean(block.type ?? block.kind ?? block.block_type ?? block.name).toLowerCase();
+    const type = rawType
+      .replace("теория", "explanation")
+      .replace("объяснение", "explanation")
+      .replace("пример", "example")
+      .replace("кейс", "case_study")
+      .replace("практика", "practice")
+      .replace("задание", "practice")
+      .replace("чек-лист", "checklist")
+      .replace("чеклист", "checklist")
+      .replace("итог", "summary");
     const title = clean(block.title ?? block.label);
     const body = clean(block.body ?? block.content ?? block.text);
     if (!body) continue;
@@ -640,10 +675,10 @@ function validateLessonContentResponse(value: unknown): LessonContentResult {
 
   const fromFlexibleBlocks = mapFlexibleLessonBlocks(record);
   const result = {
-    theory_text: clean(record.theory_text) || fromFlexibleBlocks.theory_text,
-    examples_text: clean(record.examples_text) || fromFlexibleBlocks.examples_text,
-    practice_text: clean(record.practice_text) || fromFlexibleBlocks.practice_text,
-    checklist_text: clean(record.checklist_text) || fromFlexibleBlocks.checklist_text,
+    theory_text: clean(record.theory_text ?? record.theory ?? record.explanation_text ?? record.content ?? record.main_text) || fromFlexibleBlocks.theory_text,
+    examples_text: clean(record.examples_text ?? record.examples ?? record.example_text) || fromFlexibleBlocks.examples_text,
+    practice_text: clean(record.practice_text ?? record.practice ?? record.assignment_text ?? record.task_text) || fromFlexibleBlocks.practice_text,
+    checklist_text: clean(record.checklist_text ?? record.checklist ?? record.criteria_text ?? record.summary_text) || fromFlexibleBlocks.checklist_text,
     warnings: [...warningsFrom(record), ...fromFlexibleBlocks.warnings].filter(Boolean),
   };
 
