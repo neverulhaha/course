@@ -38,6 +38,27 @@ const ANSWER_COLUMNS = ["id", "question_id", "answer_text", "is_correct", "posit
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
+  // Browser opening /functions/v1/restore-course-version sends GET.
+  // Return a harmless health response instead of the confusing
+  // “Метод не поддерживается” error. Real restore is still POST-only.
+  if (req.method === "GET") {
+    return jsonResponse({
+      ok: true,
+      function: "restore-course-version",
+      message: "Функция доступна. Откат версии выполняется только POST-запросом из интерфейса.",
+      allowed_methods: ["POST", "OPTIONS"],
+    });
+  }
+
+  if (req.method === "HEAD") return new Response(null, { status: 200, headers: corsHeaders });
+
+  if (req.method !== "POST") {
+    return errorResponse(new AppError("INVALID_INPUT", "Метод не поддерживается. Для отката версии нужен POST-запрос.", 405, {
+      method: req.method,
+      allowed_methods: ["POST", "OPTIONS"],
+    }));
+  }
+
   const supabaseAdmin = createAdminClient();
   let user: any = null;
   let courseId: string | null = null;

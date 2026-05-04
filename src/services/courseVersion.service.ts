@@ -417,6 +417,9 @@ async function parseEdgeFunctionError(error: unknown): Promise<Error> {
   if (code === "UNAUTHORIZED_NO_AUTH_HEADER") {
     return new Error("Функция отката развёрнута с обязательной JWT-проверкой на gateway. Передеплойте restore-course-version с --no-verify-jwt или через supabase/config.toml, потому что авторизация уже проверяется внутри функции.");
   }
+  if (code === "INVALID_INPUT" && message?.toLowerCase().includes("метод")) {
+    return new Error("Функция отката получила не POST-запрос. Установите свежую сборку фронта и передеплойте restore-course-version из текущего архива.");
+  }
   if (message && code) return new Error(`${message} (${code})`);
   return new Error(message ?? "Не удалось выполнить запрос");
 }
