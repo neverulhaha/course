@@ -693,19 +693,22 @@ function pushJoined(target: string[], title: string, body: string): void {
   if (text) target.push(text);
 }
 
+function firstNonEmptyArray(...values: unknown[]): unknown[] {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length > 0) return value;
+  }
+  return [];
+}
+
 function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
   const lessonRecord = asRecord(record.lesson);
-  const blocksRaw = Array.isArray(record.blocks)
-    ? record.blocks
-    : Array.isArray(lessonRecord?.blocks)
-      ? lessonRecord?.blocks as unknown[]
-      : Array.isArray(record.sections)
-        ? record.sections
-        : Array.isArray(record.content_blocks)
-          ? record.content_blocks
-          : Array.isArray(record.lesson_sections)
-            ? record.lesson_sections
-            : [];
+  const blocksRaw = firstNonEmptyArray(
+    record.blocks,
+    lessonRecord?.blocks,
+    record.sections,
+    record.content_blocks,
+    record.lesson_sections,
+  );
 
   const theoryParts: string[] = [];
   const exampleParts: string[] = [];
