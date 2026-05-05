@@ -25,7 +25,7 @@ import {
   updateModule,
   type LessonContentPatch,
 } from "@/services/courseEditor.service";
-import { generateCourseContent, generateLessonContent, regenerateLessonBlock, type AiBlockCommand, type AiBlockType } from "@/services/aiGeneration.service";
+import { generateLessonContent, regenerateLessonBlock, type AiBlockCommand, type AiBlockType } from "@/services/aiGeneration.service";
 import { generateLessonQuiz, generateCourseQuiz } from "@/services/quiz.service";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/app/components/ui/utils";
@@ -158,6 +158,7 @@ export default function CourseEditor() {
   const [generationNotice, setGenerationNotice] = useState<{ type: "success" | "warning" | "error"; message: string } | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [lessonDirty, setLessonDirty] = useState(false);
+  const [lessonGenerationErrors, setLessonGenerationErrors] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!lessonDirty) return;
@@ -218,6 +219,13 @@ export default function CourseEditor() {
     selectedLesson && lessonContentByLessonId.has(selectedLesson.id)
       ? lessonContentByLessonId.get(selectedLesson.id)!
       : emptyLessonContent;
+
+  const selectedLessonHasContent = selectedLesson ? lessonContentByLessonId.has(selectedLesson.id) && lessonContent.blocks.some((block) => block.content.trim().length > 0) : false;
+  const generatingLessonId = busyAction?.startsWith("lesson:") ? busyAction.slice("lesson:".length) : null;
+  const allLessonsHaveContent = modules.length > 0 && modules.flatMap((module) => module.lessons).length > 0 && modules.flatMap((module) => module.lessons).every((lesson) => {
+    const content = lessonContentByLessonId.get(lesson.id);
+    return Boolean(content?.blocks.some((block) => block.content.trim().length > 0));
+  });
 
   const { prev, next } = useMemo(
     () => (selectedLesson ? getLessonNeighbors(modules, selectedLesson.id) : { prev: null, next: null }),
@@ -356,55 +364,69 @@ export default function CourseEditor() {
   };
 
   const handleGenerateLesson = () => {
-    if (!selectedLesson) return;
-    void runAiAction("lesson", () => generateLessonContent(courseId, selectedLesson.id));
-  };
+    if (!selectedLesson || busyAction) return;
+    if (selectedLessonHasContent) {
+      const confirmed = window.confirm("Урок уже содержит материалы. Перегенерировать его целиком? Текущие ручные правки в содержимом могут быть перезаписаны.");
+      if (!confirmed) return;
+    }
 
-  const handleGenerateCourse = () => {
-    if (busyAction) return;
-    setBusyAction("course");
+    const lessonId = selectedLesson.id;
+    setBusyAction(`lesson:${lessonId}`);
     setActionError(null);
     setGenerationNotice(null);
+    setLessonGenerationErrors((previous) => {
+      const next = new Set(previous);
+      next.delete(lessonId);
+      return next;
+    });
 
     void (async () => {
       try {
-        const { data, error } = await generateCourseContent(courseId);
+        const { data, error } = await generateLessonContent(courseId, lessonId);
         if (error) {
-          const message = toUserErrorMessage(error, "Не удалось выполнить действие. Попробуйте ещё раз.");
+          const message = toUserErrorMessage(error, "Не удалось сгенерировать урок. Попробуйте ещё раз.");
           setActionError(message);
           setGenerationNotice({ type: "error", message });
+          setLessonGenerationErrors((previous) => new Set(previous).add(lessonId));
           toast.error(message);
           return;
         }
 
-        await reloadBundle();
-
-        const generatedCount = data?.generated_lessons?.length ?? 0;
-        const skippedCount = data?.skipped_lessons?.length ?? 0;
-        const failedCount = data?.failed_lessons?.length ?? 0;
-        const status = data?.course_status;
-
-        if (failedCount > 0 || status === "partial") {
-          setGenerationNotice({
-            type: "warning",
-            message:
-              "Сгенерированы не все уроки. " +
-              "Успешно: " + generatedCount + ". Пропущено: " + skippedCount + ". Ошибок: " + failedCount + ". " +
-              "Успешные результаты сохранены, генерацию можно повторить для оставшихся уроков.",
-          });
-        } else {
-          setGenerationNotice({
-            type: "success",
-            message: "Содержание курса успешно сгенерировано. Создано уроков: " + generatedCount + ".",
+        if (data?.lesson_content) {
+          const nextContent = parseLessonContentRow(data.lesson_content, selectedLesson.objective ?? lessonContent.goal);
+          setLessonContentByLessonId((previous) => {
+            const next = new Map(previous);
+            next.set(lessonId, nextContent);
+            return next;
           });
         }
 
+        setModules((previous) => previous.map((module) => {
+          const lessons = module.lessons.map((lesson) => lesson.id === lessonId ? { ...lesson, status: "generated" as const } : lesson);
+          const generatedCount = lessons.filter((lesson) => lesson.status !== "empty" && lesson.status !== "draft").length;
+          return {
+            ...module,
+            lessons,
+            progressPercent: lessons.length === 0 ? 0 : Math.round((generatedCount / lessons.length) * 100),
+          };
+        }));
+        setSelectedLesson((current) => current?.id === lessonId ? { ...current, status: "generated" } : current);
+        setEditorMeta((current) => ({ ...current, lastSaved: "только что" }));
         setShowSaveIndicator(true);
         setTimeout(() => setShowSaveIndicator(false), 2000);
+
+        const warnings = data?.warnings?.filter(Boolean) ?? [];
+        if (warnings.length > 0) {
+          setGenerationNotice({ type: "warning", message: "Урок сгенерирован, но есть предупреждения: " + warnings.join(" ") });
+        } else {
+          setGenerationNotice({ type: "success", message: selectedLessonHasContent ? "Урок перегенерирован. Остальные уроки не изменялись." : "Урок сгенерирован. Остальные уроки не изменялись." });
+        }
+        toast.success(selectedLessonHasContent ? "Урок перегенерирован" : "Урок сгенерирован");
       } catch (error) {
-        const message = toUserErrorMessage(error, "Не удалось сгенерировать содержание курса. Попробуйте ещё раз.");
+        const message = toUserErrorMessage(error, "Не удалось выполнить генерацию урока. Попробуйте ещё раз.");
         setActionError(message);
         setGenerationNotice({ type: "error", message });
+        setLessonGenerationErrors((previous) => new Set(previous).add(lessonId));
         toast.error(message);
       } finally {
         setBusyAction(null);
@@ -422,6 +444,12 @@ export default function CourseEditor() {
   };
 
   const handleGenerateCourseQuiz = () => {
+    if (!allLessonsHaveContent) {
+      const message = "Итоговый квиз доступен после генерации всех уроков.";
+      setGenerationNotice({ type: "warning", message });
+      toast.error(message);
+      return;
+    }
     void runAiAction("course-quiz", async () => {
       const res = await generateCourseQuiz(courseId, 10, true);
       if (!res.error) setGenerationNotice({ type: "success", message: "Итоговый квиз курса создан." });
@@ -695,6 +723,8 @@ export default function CourseEditor() {
             onAddLesson={handleAddLesson}
             onDeleteLesson={handleDeleteLesson}
             onMoveLesson={handleMoveLesson}
+            generatingLessonId={generatingLessonId}
+            failedLessonIds={lessonGenerationErrors}
           />
         </div>
 
@@ -702,7 +732,7 @@ export default function CourseEditor() {
           lesson={selectedLesson}
           content={lessonContent}
           onGenerateLesson={handleGenerateLesson}
-          generatingLesson={busyAction === "lesson"}
+          generatingLesson={busyAction === `lesson:${selectedLesson.id}`}
           onRegenerateBlock={lessonContent.blocks.length > 0 ? handleRegenerateBlock : undefined}
           regeneratingBlockKey={busyAction ?? undefined}
           onSaveLessonMeta={handleSaveLessonMeta}
@@ -727,12 +757,12 @@ export default function CourseEditor() {
             content={lessonContent}
             course={editorMeta}
             onGenerateLesson={handleGenerateLesson}
-            onGenerateCourseContent={handleGenerateCourse}
             onRegenerateBlock={lessonContent.blocks.length > 0 ? handleRegenerateBlock : undefined}
             busy={busyAction !== null}
             modules={modules}
             onGenerateLessonQuiz={handleGenerateLessonQuiz}
             onGenerateCourseQuiz={handleGenerateCourseQuiz}
+            canGenerateCourseQuiz={allLessonsHaveContent}
             sources={sources}
           />
         </div>

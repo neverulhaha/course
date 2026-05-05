@@ -10,9 +10,9 @@
  */
 
 /** Соответствует `public.courses.generation_depth` в Supabase. */
-export type GenerationDepth = "plan" | "plan_lessons" | "full";
+export type GenerationDepth = "plan";
 
-export const GENERATION_DEPTH_VALUES = ["plan", "plan_lessons", "full"] as const satisfies readonly GenerationDepth[];
+export const GENERATION_DEPTH_VALUES = ["plan"] as const satisfies readonly GenerationDepth[];
 
 /** Параметры экрана создания курса и подписи для обзора — одна точка правды. */
 export const GENERATION_DEPTH_OPTIONS: ReadonlyArray<{
@@ -24,18 +24,7 @@ export const GENERATION_DEPTH_OPTIONS: ReadonlyArray<{
   {
     value: "plan",
     label: "Только план",
-    description: "Структура с модулями и уроками без материалов",
-  },
-  {
-    value: "plan_lessons",
-    label: "План и уроки",
-    description: "Структура и материалы всех уроков",
-  },
-  {
-    value: "full",
-    label: "Полный курс",
-    description: "Материалы уроков, задания, тест и проверка качества",
-    badge: "Рекомендуется",
+    description: "Сначала создаётся структура курса. Содержимое уроков генерируется отдельно в редакторе.",
   },
 ];
 
@@ -48,10 +37,21 @@ export function isGenerationDepth(v: unknown): v is GenerationDepth {
   return typeof v === "string" && (GENERATION_DEPTH_VALUES as readonly string[]).includes(v);
 }
 
-export type LessonStatus = "ready" | "has-issues" | "generated" | "draft" | "empty" | "edited";
+export type LessonStatus = "ready" | "has-issues" | "generated" | "draft" | "empty" | "edited" | "generating" | "generation-error";
 export type BlockType = "text" | "example" | "practice" | "code";
 export type QaSeverity = "low" | "medium" | "high";
-export type VersionChangeType = "structure" | "content" | "quiz" | "rollback" | "creation";
+export type VersionChangeType =
+  | "structure"
+  | "content"
+  | "quiz"
+  | "rollback"
+  | "creation"
+  | "plan_generation"
+  | "lesson_generation"
+  | "lesson_block_regeneration"
+  | "plan_generated"
+  | "lesson_content_generated"
+  | "lesson_block_regenerated";
 
 /** ---- Course ---- */
 export interface CourseMeta {

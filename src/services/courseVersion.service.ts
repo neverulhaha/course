@@ -215,11 +215,14 @@ export async function createCourseVersionSnapshot(
 
 
 export const COURSE_VERSION_CHANGE_LABELS: Record<string, string> = {
+  plan_generation: "Сгенерирован план",
   plan_generated: "Сгенерирован план",
   initial_generation_plan: "Сгенерирован план",
+  lesson_generation: "Сгенерирован урок",
   lesson_content_generated: "Сгенерирован урок",
   initial_generation_content: "Сгенерирован контент курса",
   course_content_generated: "Сгенерирован весь курс",
+  lesson_block_regeneration: "Перегенерирован блок урока",
   lesson_block_regenerated: "Перегенерирован блок урока",
   manual_edit: "Ручное редактирование",
   lesson_quiz_generated: "Сгенерирован квиз урока",

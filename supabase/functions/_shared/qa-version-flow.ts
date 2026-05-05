@@ -254,7 +254,7 @@ export function clampScore(value: unknown) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-export function buildRuleBasedQa(snapshot: any) {
+export function buildRuleBasedQa(snapshot: any, qaScope: "plan" | "course" = "course") {
   const modules = snapshot.modules ?? [];
   const lessons = snapshot.lessons ?? [];
   const contents = snapshot.lesson_contents ?? [];
@@ -262,6 +262,7 @@ export function buildRuleBasedQa(snapshot: any) {
   const sources = snapshot.sources ?? [];
   const issues: any[] = [];
   const recommendations: any[] = [];
+  const isPlanScope = qaScope === "plan" || ["plan", "partial"].includes(String(snapshot.course?.status ?? ""));
 
   if (!modules.length) issues.push(issue("critical", "structure", "Нет модулей", "Курс не содержит модулей.", "course", snapshot.course?.id, "Сгенерируйте или добавьте модули."));
   if (!lessons.length) issues.push(issue("critical", "structure", "Нет уроков", "Курс не содержит уроков.", "course", snapshot.course?.id, "Сгенерируйте или добавьте уроки."));
@@ -271,22 +272,23 @@ export function buildRuleBasedQa(snapshot: any) {
     if (!String(lesson.summary ?? "").trim()) issues.push(issue("medium", "completeness", "У урока нет описания", `Урок «${lesson.title ?? "Без названия"}» не содержит summary.`, "lesson", lesson.id, "Добавьте краткое описание."));
     if (!String(lesson.learning_outcome ?? "").trim()) issues.push(issue("medium", "completeness", "У урока нет результата обучения", `Урок «${lesson.title ?? "Без названия"}» не содержит learning_outcome.`, "lesson", lesson.id, "Добавьте ожидаемый результат."));
     const lc = contents.find((c: any) => c.lesson_id === lesson.id);
-    if (!lc) issues.push(issue("high", "content", "Нет содержимого урока", `Урок «${lesson.title ?? "Без названия"}» не имеет lesson_contents.`, "lesson", lesson.id, "Сгенерируйте или заполните содержимое урока."));
-    else {
+    if (!lc) {
+      if (!isPlanScope) issues.push(issue("high", "content", "Нет содержимого урока", `Урок «${lesson.title ?? "Без названия"}» не имеет lesson_contents.`, "lesson", lesson.id, "Сгенерируйте или заполните содержимое урока."));
+    } else {
       for (const field of ["theory_text", "examples_text", "practice_text", "checklist_text"]) {
-        if (!String(lc[field] ?? "").trim()) issues.push(issue("medium", "content", "Пустой блок урока", `В уроке «${lesson.title ?? "Без названия"}» пустой блок ${field}.`, "lesson_content", lc.id, "Заполните блок."));
+        if (!String(lc[field] ?? "").trim() && !isPlanScope) issues.push(issue("medium", "content", "Пустой блок урока", `В уроке «${lesson.title ?? "Без названия"}» пустой блок ${field}.`, "lesson_content", lc.id, "Заполните блок."));
       }
     }
   }
 
-  if (!quizzes.length) recommendations.push(rec("medium", "Добавить квизы", "В курсе нет квизов. Добавьте квиз к ключевым урокам или итоговый квиз.", "quizzes"));
+  if (!quizzes.length && !isPlanScope) recommendations.push(rec("medium", "Добавить квизы", "В курсе нет квизов. Добавьте квиз к ключевым урокам или итоговый квиз.", "quizzes"));
   const sourceMode = String(snapshot.course?.generation_mode ?? "").includes("source") || String(snapshot.course?.source_mode ?? "").includes("source") || sources.length > 0;
   const onlySourceMode = sources.some((s: any) => s.only_source_mode);
   if (sourceMode && !sources.length) issues.push(issue("high", "source", "Нет источника", "Курс выглядит созданным по источнику, но sources пустой.", "course", snapshot.course?.id, "Добавьте источник или отключите source mode."));
 
   const completenessPenalty = Math.min(45, issues.filter((x) => x.severity === "high" || x.severity === "critical").length * 12 + issues.filter((x) => x.severity === "medium").length * 4);
   const structureScore = modules.length && lessons.length ? 85 : 30;
-  const coherenceScore = Math.max(40, 90 - Math.max(0, lessons.length - contents.length) * 5);
+  const coherenceScore = isPlanScope ? 86 : Math.max(40, 90 - Math.max(0, lessons.length - contents.length) * 5);
   const levelScore = 80;
   const sourceScore = sourceMode ? (sources.length ? 82 : 25) : 100;
   const total = Math.max(0, Math.round((structureScore + coherenceScore + levelScore + sourceScore) / 4 - completenessPenalty));
@@ -297,7 +299,7 @@ export function buildRuleBasedQa(snapshot: any) {
     level_match_score: clampScore(levelScore),
     source_alignment_score: clampScore(sourceScore),
     total_score: clampScore(total),
-    summary: "AI-проверка недоступна или не дала валидный ответ, выполнена базовая проверка правил.",
+    summary: isPlanScope ? "Выполнена QA-проверка структуры курса. Отсутствие содержания уроков не считается ошибкой для плана." : "AI-проверка недоступна или не дала валидный ответ, выполнена базовая проверка правил.",
     issues,
     recommendations,
     suspicious_facts: [],
@@ -317,7 +319,7 @@ export function stripMarkdownJson(text: string) {
   return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
 
-export async function runAiQa(snapshot: any) {
+export async function runAiQa(snapshot: any, qaScope: "plan" | "course" = "course") {
   const apiKey = Deno.env.get("AI_API_KEY") ?? Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) return null;
   const baseUrl = Deno.env.get("AI_BASE_URL") ?? "https://api.openai.com/v1";
@@ -327,7 +329,7 @@ export async function runAiQa(snapshot: any) {
     model,
     messages: [
       { role: "system", content: "Ты QA-эксперт образовательных курсов. Верни только валидный JSON без markdown." },
-      { role: "user", content: `Проверь качество курса. Оцени структуру, связность, уровень, соответствие источнику, квизы и подозрительные факты. Верни JSON со схемой: {"structure_score":0,"coherence_score":0,"level_match_score":0,"source_alignment_score":0,"total_score":0,"summary":"","issues":[],"recommendations":[],"suspicious_facts":[],"source_alignment":{"enabled":false,"only_source_mode":false,"summary":"","unsupported_claims":[]}}. Данные курса:\n${JSON.stringify(compactSnapshot)}` },
+      { role: "user", content: `Режим QA: ${qaScope === "plan" ? "проверка только структуры/плана; отсутствие lesson_contents и квизов НЕ является ошибкой" : "проверка курса"}. Проверь качество курса. Оцени структуру, связность, уровень, соответствие источнику, квизы и подозрительные факты. Верни JSON со схемой: {"structure_score":0,"coherence_score":0,"level_match_score":0,"source_alignment_score":0,"total_score":0,"summary":"","issues":[],"recommendations":[],"suspicious_facts":[],"source_alignment":{"enabled":false,"only_source_mode":false,"summary":"","unsupported_claims":[]}}. Данные курса:\n${JSON.stringify(compactSnapshot)}` },
     ],
     temperature: 0.2,
   };

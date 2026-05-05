@@ -36,16 +36,19 @@ Deno.serve(async (req) => {
       if (!version) throw new AppError("VERSION_NOT_FOUND", "Версия не найдена", 404);
     }
 
-    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_started", entityType: "course", entityId: courseId, metadata: { version_id: versionId } });
+    const requestedQaScope = typeof body?.qa_scope === "string" && body.qa_scope.trim() === "plan" ? "plan" : "course";
+    const courseStatus = typeof course?.status === "string" ? course.status : "";
+    const qaScope = requestedQaScope === "plan" || courseStatus === "plan" || courseStatus === "partial" ? "plan" : "course";
+    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_started", entityType: "course", entityId: courseId, metadata: { version_id: versionId, qa_scope: qaScope } });
 
     const snapshot = await loadCourseSnapshot(supabaseAdmin, courseId);
     let qa = null;
     try {
-      qa = await runAiQa(snapshot);
+      qa = await runAiQa(snapshot, qaScope);
     } catch (error) {
       console.warn("ai_qa_failed_using_fallback", error);
     }
-    if (!qa) qa = buildRuleBasedQa(snapshot);
+    if (!qa) qa = buildRuleBasedQa(snapshot, qaScope);
 
     const linkedVersionId = versionId ?? course.current_version_id ?? null;
     const insertPayload = {
@@ -77,7 +80,7 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from("course_versions").update({ qa_score: qa.total_score }).eq("id", linkedVersionId).eq("course_id", courseId);
     }
 
-    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_completed", entityType: "qa_report", entityId: report.id, metadata: { qa_report_id: report.id, version_id: linkedVersionId, total_score: qa.total_score, fallback: qa.fallback === true } });
+    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_completed", entityType: "qa_report", entityId: report.id, metadata: { qa_report_id: report.id, version_id: linkedVersionId, total_score: qa.total_score, fallback: qa.fallback === true, qa_scope: qaScope } });
     return jsonResponse({ report });
   } catch (error) {
     if (courseId && user?.id) await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_failed", entityType: "course", entityId: courseId, metadata: { error_code: error instanceof AppError ? error.code : "QA_FAILED", error_message: error instanceof Error ? error.message : "Unknown error" } });

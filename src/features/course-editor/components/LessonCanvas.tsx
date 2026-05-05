@@ -203,7 +203,7 @@ function LessonEmptyState({ onGenerateLesson, generatingLesson = false }: { onGe
       <div style={{ width: 52, height: 52, borderRadius: 14, background: "rgba(74,144,226,0.07)", border: "1px solid rgba(74,144,226,0.12)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
         <FileText className="size-6 text-[var(--brand-blue)]" />
       </div>
-      <h3 className="mb-2 text-lg font-extrabold text-[var(--gray-900)]">Урок пуст</h3>
+      <h3 className="mb-2 text-lg font-extrabold text-[var(--gray-900)]">Урок ещё не сгенерирован</h3>
       <p className="mb-6 max-w-md text-sm leading-relaxed text-[var(--gray-500)]">
         Сгенерируйте материалы урока, чтобы продолжить работу с содержанием.
       </p>
@@ -214,7 +214,7 @@ function LessonEmptyState({ onGenerateLesson, generatingLesson = false }: { onGe
         disabled={generatingLesson || !onGenerateLesson}
       >
         <Sparkles className="size-3.5" />
-        {generatingLesson ? "Генерация…" : "Сгенерировать материалы урока"}
+        {generatingLesson ? "Генерация…" : "Сгенерировать урок"}
       </button>
     </div>
   );
