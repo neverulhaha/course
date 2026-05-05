@@ -44,6 +44,7 @@ type LessonViewData = {
   attemptsCount: number;
   bestScore: number | null;
   assignmentStatus: string | null;
+  assignmentText: string | null;
 };
 
 type PageState = "loading" | "ready" | "not_found" | "forbidden" | "error";
@@ -193,6 +194,7 @@ export default function CoursePlayer() {
   const [lessonLoading, setLessonLoading] = useState(false);
   const [completeBusy, setCompleteBusy] = useState(false);
   const [assignmentBusy, setAssignmentBusy] = useState(false);
+  const [assignmentText, setAssignmentText] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
@@ -246,6 +248,7 @@ export default function CoursePlayer() {
     let cancelled = false;
     setLessonLoading(true);
     setNotice(null);
+    setAssignmentText("");
     void (async () => {
       const res = await fetchPlayerLessonPayload(courseId, activeLesson.id, user?.id ?? null);
       if (cancelled) return;
@@ -271,7 +274,9 @@ export default function CoursePlayer() {
         attemptsCount: res.attemptsCount,
         bestScore: res.bestScore,
         assignmentStatus: res.assignmentStatus,
+        assignmentText: res.assignmentText,
       });
+      setAssignmentText(res.assignmentText ?? "");
       setLessonLoading(false);
       const progressResult = await recalculateProgress(courseId, activeLesson.id);
       if (!progressResult.error) void refreshLearningStats();
@@ -333,8 +338,13 @@ export default function CoursePlayer() {
 
   const submitAssignment = async () => {
     if (!courseId || !activeLesson || assignmentBusy) return;
-    const text = window.prompt("Введите ответ на практическое задание", "");
-    if (!text?.trim()) return;
+    const text = assignmentText.trim();
+    if (!text) {
+      const message = "Введите ответ на практическое задание.";
+      setNotice(message);
+      toast.error(message);
+      return;
+    }
     setAssignmentBusy(true);
     setNotice(null);
     const result = await submitLessonAssignment(courseId, activeLesson.id, text);
@@ -345,8 +355,9 @@ export default function CoursePlayer() {
       toast.error(message);
       return;
     }
+    setLessonData((prev) => prev ? { ...prev, assignmentStatus: "submitted", assignmentText: text } : prev);
     setNotice("Практическое задание отправлено.");
-    toast.success("Изменения сохранены");
+    toast.success("Практическое задание отправлено");
     void refreshLearningStats();
   };
 
@@ -494,22 +505,49 @@ export default function CoursePlayer() {
             </div>
           )}
 
-          {(lessonData?.hasAssignment || lessonData?.hasQuiz) && (
-            <section className="mt-6 grid gap-3 sm:grid-cols-2">
-              {lessonData?.hasAssignment && (
-                <button type="button" disabled={assignmentBusy} onClick={submitAssignment} className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 text-left shadow-sm disabled:opacity-60">
-                  <PenLine className="mb-3 size-5 text-[var(--brand-blue)]" />
-                  <p className="font-extrabold text-[var(--gray-900)]">Практическое задание</p>
-                  <p className="mt-1 text-sm text-[var(--gray-500)]">{lessonData.assignmentStatus ? "Ответ отправлен" : assignmentBusy ? "Отправка…" : "Отправьте ответ по заданию"}</p>
+          {lessonData?.hasAssignment && (
+            <section className="mt-6 rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 shadow-sm">
+              <div className="mb-4 flex items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]">
+                  <PenLine className="size-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-extrabold text-[var(--gray-900)]">Ответ на практическое задание</p>
+                  <p className="mt-1 text-sm leading-relaxed text-[var(--gray-500)]">
+                    Введите решение прямо здесь. Ответ сохранится в системе без открытия браузерного окна.
+                  </p>
+                </div>
+              </div>
+              <textarea
+                value={assignmentText}
+                onChange={(event) => setAssignmentText(event.target.value)}
+                disabled={assignmentBusy}
+                className="min-h-36 w-full resize-y rounded-2xl border border-[var(--border-sm)] bg-[var(--gray-50)] px-4 py-3 text-sm leading-relaxed text-[var(--gray-800)] outline-none transition focus:border-[var(--brand-blue)] focus:bg-[var(--bg-surface)] focus:ring-4 focus:ring-[var(--brand-blue)]/10 disabled:opacity-60"
+                placeholder="Напишите ответ, код или пояснение к практическому заданию..."
+              />
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-semibold text-[var(--gray-500)]">
+                  {lessonData.assignmentStatus ? "Ответ уже отправлен. Можно обновить его и отправить повторно." : "После отправки ответ сохранится в прогрессе урока."}
+                </p>
+                <button
+                  type="button"
+                  disabled={assignmentBusy || !assignmentText.trim()}
+                  onClick={submitAssignment}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--brand-blue)] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {assignmentBusy ? "Отправка…" : lessonData.assignmentStatus ? "Обновить ответ" : "Отправить ответ"}
                 </button>
-              )}
-              {lessonData?.hasQuiz && lessonData.quizId && (
-                <Link to={`/learn/${courseId}/quiz/${lessonData.quizId}`} className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 text-left no-underline shadow-sm">
-                  <ClipboardList className="mb-3 size-5 text-[var(--brand-blue)]" />
-                  <p className="font-extrabold text-[var(--gray-900)]">Проверка знаний</p>
-                  <p className="mt-1 text-sm text-[var(--gray-500)]">{lessonData.bestScore != null ? `Лучший результат: ${lessonData.bestScore}%` : lessonData.attemptsCount ? `Попыток: ${lessonData.attemptsCount}` : "Пройти вопросы по уроку"}</p>
-                </Link>
-              )}
+              </div>
+            </section>
+          )}
+
+          {lessonData?.hasQuiz && lessonData.quizId && (
+            <section className="mt-4">
+              <Link to={`/learn/${courseId}/quiz/${lessonData.quizId}`} className="block rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 text-left no-underline shadow-sm">
+                <ClipboardList className="mb-3 size-5 text-[var(--brand-blue)]" />
+                <p className="font-extrabold text-[var(--gray-900)]">Проверка знаний</p>
+                <p className="mt-1 text-sm text-[var(--gray-500)]">{lessonData.bestScore != null ? `Лучший результат: ${lessonData.bestScore}%` : lessonData.attemptsCount ? `Попыток: ${lessonData.attemptsCount}` : "Пройти вопросы по уроку"}</p>
+              </Link>
             </section>
           )}
 

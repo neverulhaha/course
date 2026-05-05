@@ -410,20 +410,21 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
   bestScore: number | null;
   completed: boolean;
   assignmentStatus: string | null;
+  assignmentText: string | null;
   error: string | null;
 }> {
   const access = await getLessonAccessStatus(lessonId, courseId);
-  if (access.status !== "ok") return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, error: access.status === "error" ? access.error ?? "Не удалось проверить доступ к уроку." : access.status };
+  if (access.status !== "ok") return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, error: access.status === "error" ? access.error ?? "Не удалось проверить доступ к уроку." : access.status };
 
   const { data: les } = await supabase.from("lessons").select("id, title, module_id, objective, summary, estimated_duration, learning_outcome").eq("id", lessonId).maybeSingle();
   const lr = asRecord(les);
-  if (!lr) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, error: "not_found" };
+  if (!lr) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, error: "not_found" };
   const mid = str(lr.module_id);
   let moduleTitle = "—";
   if (mid) {
     const { data: mod } = await supabase.from("modules").select("title, course_id").eq("id", mid).maybeSingle();
     const mr = asRecord(mod);
-    if (str(mr?.course_id) !== courseId) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, error: "forbidden" };
+    if (str(mr?.course_id) !== courseId) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, error: "forbidden" };
     moduleTitle = str(mr?.title) ?? "—";
   }
 
@@ -445,11 +446,14 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
 
   let completed = false;
   let assignmentStatus: string | null = null;
+  let assignmentText: string | null = null;
   if (userId) {
     const { data: completion } = await supabase.from("lesson_completions").select("id").eq("lesson_id", lessonId).eq("user_id", userId).maybeSingle();
     completed = Boolean(completion);
-    const { data: assignmentRows } = await supabase.from("assignment_submissions").select("status").eq("lesson_id", lessonId).eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
-    assignmentStatus = str(asRecord((assignmentRows ?? [])[0])?.status) ?? null;
+    const { data: assignmentRows } = await supabase.from("assignment_submissions").select("status, submission_text").eq("lesson_id", lessonId).eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
+    const assignmentRow = asRecord((assignmentRows ?? [])[0]);
+    assignmentStatus = str(assignmentRow?.status) ?? null;
+    assignmentText = str(assignmentRow?.submission_text) ?? null;
   }
 
   const contentWithLessonMeta = {
@@ -460,7 +464,7 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
     lesson_learning_outcome: str(lr.learning_outcome) ?? null,
   };
 
-  return { moduleTitle, lessonTitle: str(lr.title) ?? "Урок", content: contentWithLessonMeta, quizId, quizTitle: str(quiz?.title) ?? null, attemptsCount, bestScore, completed, assignmentStatus, error: null };
+  return { moduleTitle, lessonTitle: str(lr.title) ?? "Урок", content: contentWithLessonMeta, quizId, quizTitle: str(quiz?.title) ?? null, attemptsCount, bestScore, completed, assignmentStatus, assignmentText, error: null };
 }
 
 export async function fetchQuizForTaking(quizId: string): Promise<{ title: string; questions: QuizQuestionView[]; error: string | null }> {
