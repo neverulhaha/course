@@ -5,7 +5,6 @@ import {
   corsHeaders,
   createAdminClient,
   errorResponse,
-  hasText,
   insertStep,
   invokeFunction,
   jsonResponse,
@@ -72,16 +71,6 @@ async function refreshCounters(db: Db, sessionId: string, currentStep: string | 
   }).eq("id", sessionId);
 }
 
-async function loadLessons(db: Db, courseId: string): Promise<Rec[]> {
-  const { data: modules, error: moduleError } = await db.from("modules").select("id").eq("course_id", courseId).order("position", { ascending: true });
-  if (moduleError) throw new AppError("DATABASE_ERROR", "Не удалось загрузить структуру курса", 500, { message: moduleError.message });
-  const moduleIds = (modules ?? []).map((row) => clean(asRecord(row)?.id)).filter(Boolean);
-  if (moduleIds.length === 0) return [];
-  const { data: lessons, error: lessonError } = await db.from("lessons").select("id, title, module_id, position").in("module_id", moduleIds).order("position", { ascending: true });
-  if (lessonError) throw new AppError("DATABASE_ERROR", "Не удалось загрузить уроки курса", 500, { message: lessonError.message });
-  return (lessons ?? []).map((row) => asRecord(row)).filter(Boolean) as Rec[];
-}
-
 async function getMaxOrder(db: Db, sessionId: string): Promise<number> {
   const { data, error } = await db.from("generation_steps").select("step_order").eq("session_id", sessionId).order("step_order", { ascending: false }).limit(1);
   if (error) throw new AppError("DATABASE_ERROR", "Не удалось подготовить следующие этапы", 500, { message: error.message });
@@ -99,64 +88,16 @@ async function stepExists(db: Db, sessionId: string, stepType: string, entityId?
 async function enqueueAfterPlan(db: Db, session: Rec): Promise<void> {
   const sessionId = clean(session.id);
   const courseId = clean(session.course_id);
-  const depth = normalizeDepth(session.generation_depth);
   let order = await getMaxOrder(db, sessionId) + 1;
 
-  if (depth === "plan") {
-    if (!(await stepExists(db, sessionId, "run_course_qa"))) {
-      await insertStep(db, { sessionId, courseId, stepType: "run_course_qa", stepOrder: order++, entityType: "course", entityId: courseId, maxAttempts: 1 });
-    }
-    if (!(await stepExists(db, sessionId, "validate_plan"))) {
-      await insertStep(db, { sessionId, courseId, stepType: "validate_plan", stepOrder: order++, entityType: "course", entityId: courseId });
-    }
-    await refreshCounters(db, sessionId, "run_course_qa");
-    return;
+  if (!(await stepExists(db, sessionId, "run_plan_qa"))) {
+    await insertStep(db, { sessionId, courseId, stepType: "run_plan_qa", stepOrder: order++, entityType: "course", entityId: courseId, maxAttempts: 1 });
+  }
+  if (!(await stepExists(db, sessionId, "validate_plan"))) {
+    await insertStep(db, { sessionId, courseId, stepType: "validate_plan", stepOrder: order++, entityType: "course", entityId: courseId });
   }
 
-  const lessons = await loadLessons(db, courseId);
-  for (const lesson of lessons) {
-    const lessonId = clean(lesson.id);
-    if (!lessonId || await stepExists(db, sessionId, "generate_lesson_content", lessonId)) continue;
-    await insertStep(db, {
-      sessionId,
-      courseId,
-      stepType: "generate_lesson_content",
-      stepOrder: order++,
-      entityType: "lesson",
-      entityId: lessonId,
-      inputJson: { lesson_title: clean(lesson.title), force: Boolean(session.force) },
-      maxAttempts: 3,
-    });
-  }
-
-  if (depth === "full") {
-    if (!(await stepExists(db, sessionId, "generate_course_quiz"))) {
-      await insertStep(db, { sessionId, courseId, stepType: "generate_course_quiz", stepOrder: order++, entityType: "course", entityId: courseId, inputJson: { questions_count: 10, force: Boolean(session.force) }, maxAttempts: 2 });
-    }
-    if (!(await stepExists(db, sessionId, "run_course_qa"))) {
-      await insertStep(db, { sessionId, courseId, stepType: "run_course_qa", stepOrder: order++, entityType: "course", entityId: courseId, maxAttempts: 1 });
-    }
-    if (!(await stepExists(db, sessionId, "validate_full"))) {
-      await insertStep(db, { sessionId, courseId, stepType: "validate_full", stepOrder: order++, entityType: "course", entityId: courseId });
-    }
-  } else if (!(await stepExists(db, sessionId, "validate_lessons"))) {
-    await insertStep(db, { sessionId, courseId, stepType: "validate_lessons", stepOrder: order++, entityType: "course", entityId: courseId });
-  }
-
-  await refreshCounters(db, sessionId, "generate_lesson_content");
-}
-
-async function hasLessonContent(db: Db, lessonId: string): Promise<boolean> {
-  const { data, error } = await db.from("lesson_contents").select("theory_text, examples_text, practice_text, checklist_text").eq("lesson_id", lessonId).maybeSingle();
-  if (error) throw new AppError("DATABASE_ERROR", "Не удалось проверить материалы урока", 500, { message: error.message });
-  const rec = asRecord(data);
-  return Boolean(rec && (hasText(rec.theory_text) || hasText(rec.examples_text) || hasText(rec.practice_text) || hasText(rec.checklist_text)));
-}
-
-async function hasCourseQuiz(db: Db, courseId: string): Promise<boolean> {
-  const { count, error } = await db.from("quizzes").select("*", { count: "exact", head: true }).eq("course_id", courseId).is("lesson_id", null);
-  if (error) throw new AppError("DATABASE_ERROR", "Не удалось проверить тест курса", 500, { message: error.message });
-  return (count ?? 0) > 0;
+  await refreshCounters(db, sessionId, "run_plan_qa");
 }
 
 async function executePrepareSource(db: Db, courseId: string): Promise<Rec> {
@@ -201,27 +142,20 @@ async function executeStep(req: Request, db: Db, session: Rec, step: Rec): Promi
   }
 
   if (stepType === "generate_lesson_content") {
-    const lessonId = clean(step.entity_id);
-    if (!lessonId) throw new AppError("INVALID_INPUT", "Не выбран урок", 400);
-    if (!force && await hasLessonContent(db, lessonId)) return { skipped: true, reason: "lesson_content_exists", lesson_id: lessonId };
-    await updateCourseStatus(db, courseId, "generating_lessons");
-    return await invokeFunction(req, "generate-lesson-content", { course_id: courseId, lesson_id: lessonId, force, trace_session_id: clean(session.id), trace_step_id: clean(step.id), trace_step_type: stepType });
+    return { skipped: true, reason: "mass_lesson_generation_disabled", message: "Уроки теперь генерируются только по одному из редактора." };
   }
 
   if (stepType === "generate_course_quiz") {
-    if (!force && await hasCourseQuiz(db, courseId)) return { skipped: true, reason: "course_quiz_exists" };
-    await updateCourseStatus(db, courseId, "generating_quizzes");
-    return await invokeFunction(req, "generate-course-quiz", { course_id: courseId, questions_count: Number(asRecord(step.input_json)?.questions_count ?? 10), force, trace_session_id: clean(session.id), trace_step_id: clean(step.id), trace_step_type: stepType });
+    return { skipped: true, reason: "auto_course_quiz_disabled", message: "Итоговый квиз больше не создаётся автоматически при генерации плана." };
   }
 
-  if (stepType === "run_course_qa") {
+  if (stepType === "run_plan_qa" || stepType === "run_course_qa") {
     await updateCourseStatus(db, courseId, "qa_checking");
-    return await invokeFunction(req, "run-course-qa", { course_id: courseId, trace_session_id: clean(session.id), trace_step_id: clean(step.id), trace_step_type: stepType });
+    return await invokeFunction(req, "run-course-qa", { course_id: courseId, qa_scope: "plan", trace_session_id: clean(session.id), trace_step_id: clean(step.id), trace_step_type: stepType });
   }
 
   if (stepType === "validate_plan") return await executeValidation(db, session, "plan");
-  if (stepType === "validate_lessons") return await executeValidation(db, session, "plan_lessons");
-  if (stepType === "validate_full") return await executeValidation(db, session, "full");
+  if (stepType === "validate_lessons" || stepType === "validate_full") return await executeValidation(db, session, "plan");
 
   throw new AppError("INVALID_INPUT", "Неизвестный этап создания курса", 400, { step_type: stepType });
 }
@@ -235,7 +169,7 @@ async function markFailed(db: Db, session: Rec, step: Rec, error: unknown): Prom
   const message = clean(errorPayload.message) || "Не удалось выполнить этап";
   const finalFailure = attemptCount >= maxAttempts;
   const stepType = clean(step.step_type);
-  const hardFailure = finalFailure && ["prepare_source", "generate_plan", "validate_plan", "validate_lessons", "validate_full"].includes(stepType);
+  const hardFailure = finalFailure && ["prepare_source", "generate_plan", "validate_plan", "run_plan_qa"].includes(stepType);
 
   await db.from("generation_steps").update({
     status: finalFailure ? "failed" : "pending",

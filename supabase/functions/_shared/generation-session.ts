@@ -7,7 +7,7 @@ export const corsHeaders = {
 };
 
 export type Rec = Record<string, unknown>;
-export type GenerationDepth = "plan" | "plan_lessons" | "full";
+export type GenerationDepth = "plan";
 export type SessionStatus = "pending" | "running" | "completed" | "partially_completed" | "failed" | "cancelled";
 export type StepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
 
@@ -89,12 +89,8 @@ export async function getAuthUser(req: Request, db: SupabaseClient): Promise<{ i
   return { id: data.user.id };
 }
 
-export function normalizeDepth(value: unknown, fallback: unknown = null): GenerationDepth {
-  const raw = clean(value) || clean(fallback) || "plan";
-  if (raw === "plan" || raw === "plan_only") return "plan";
-  if (raw === "plan_lessons" || raw === "lessons") return "plan_lessons";
-  if (raw === "full" || raw === "full_course") return "full";
-  throw new AppError("INVALID_INPUT", "Неизвестная глубина создания курса", 400);
+export function normalizeDepth(_value: unknown, _fallback: unknown = null): GenerationDepth {
+  return "plan";
 }
 
 export async function loadOwnedCourse(db: SupabaseClient, courseId: string, userId: string): Promise<Rec> {
@@ -139,6 +135,7 @@ export function stepTitle(stepType: string): string {
     case "generate_plan": return "Создаём план курса";
     case "generate_lesson_content": return "Готовим материалы уроков";
     case "generate_course_quiz": return "Создаём проверочные вопросы";
+    case "run_plan_qa": return "Проверяем структуру курса";
     case "run_course_qa": return "Проверяем качество курса";
     case "validate_plan":
     case "validate_lessons":
@@ -193,30 +190,15 @@ export async function loadCourseMetrics(db: SupabaseClient, courseId: string): P
   };
 }
 
-export function validateMetrics(depth: GenerationDepth, metrics: Rec): { ok: boolean; message: string; courseStatus: string; sessionStatus: SessionStatus } {
+export function validateMetrics(_depth: GenerationDepth, metrics: Rec): { ok: boolean; message: string; courseStatus: string; sessionStatus: SessionStatus } {
   const moduleCount = Number(metrics.module_count ?? 0);
   const lessonCount = Number(metrics.lesson_count ?? 0);
-  const filledCount = Number(metrics.filled_lesson_count ?? 0);
-  const quizCount = Number(metrics.course_quiz_count ?? 0);
-  const qaCount = Number(metrics.qa_report_count ?? 0);
-  const versionCount = Number(metrics.version_count ?? 0);
 
   if (moduleCount < 1 || lessonCount < 1) {
     return { ok: false, message: "Не удалось создать структуру курса", courseStatus: "failed", sessionStatus: "failed" };
   }
-  if (depth === "plan") {
-    return { ok: true, message: "План готов", courseStatus: "plan", sessionStatus: "completed" };
-  }
-  if (filledCount < lessonCount) {
-    return { ok: false, message: "Курс создан частично: не все уроки получили материалы", courseStatus: "partial", sessionStatus: "partially_completed" };
-  }
-  if (depth === "plan_lessons") {
-    return { ok: true, message: "Материалы готовы", courseStatus: "ready", sessionStatus: "completed" };
-  }
-  if (quizCount < 1 || qaCount < 1 || versionCount < 1) {
-    return { ok: false, message: "Курс создан частично: не все этапы завершены", courseStatus: "partial", sessionStatus: "partially_completed" };
-  }
-  return { ok: true, message: "Курс готов", courseStatus: "ready", sessionStatus: "completed" };
+
+  return { ok: true, message: "План готов. Уроки можно генерировать по одному в редакторе.", courseStatus: "plan", sessionStatus: "completed" };
 }
 
 export async function insertStep(db: SupabaseClient, input: {

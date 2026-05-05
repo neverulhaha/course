@@ -19,6 +19,8 @@ interface ModuleTreeProps {
   onAddLesson?: (module: ModuleSummary) => void;
   onDeleteLesson?: (lesson: LessonSummary) => void;
   onMoveLesson?: (module: ModuleSummary, lessonId: string, direction: "up" | "down") => void;
+  generatingLessonId?: string | null;
+  failedLessonIds?: ReadonlySet<string>;
   className?: string;
 }
 
@@ -64,6 +66,7 @@ function LessonItem({
   onDelete,
   onMoveUp,
   onMoveDown,
+  statusOverride,
 }: {
   lesson: LessonSummary;
   index: number;
@@ -72,6 +75,7 @@ function LessonItem({
   onDelete?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  statusOverride?: LessonSummary["status"];
 }) {
   return (
     <div className="group flex items-center">
@@ -101,7 +105,7 @@ function LessonItem({
         <span style={{ fontFamily: FONT, fontWeight: isActive ? 700 : 500, fontSize: "12.5px", lineHeight: "var(--leading-snug)", color: isActive ? "var(--gray-900)" : "var(--gray-600)", flex: 1, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const }}>
           {lesson.title}
         </span>
-        <StatusDot status={lesson.status} hasIssues={lesson.hasIssues} />
+        <StatusDot status={statusOverride ?? lesson.status} hasIssues={lesson.hasIssues} />
       </button>
       <div className="mr-2 hidden shrink-0 items-center gap-1 group-hover:flex">
         <IconButton title="Переместить урок вверх" onClick={onMoveUp} disabled={!onMoveUp}><ArrowUp className="size-3" /></IconButton>
@@ -126,6 +130,8 @@ function ModuleItem({
   onAddLesson,
   onDeleteLesson,
   onMoveLesson,
+  generatingLessonId,
+  failedLessonIds,
 }: {
   module: ModuleSummary;
   index: number;
@@ -140,6 +146,8 @@ function ModuleItem({
   onAddLesson?: (module: ModuleSummary) => void;
   onDeleteLesson?: (lesson: LessonSummary) => void;
   onMoveLesson?: (module: ModuleSummary, lessonId: string, direction: "up" | "down") => void;
+  generatingLessonId?: string | null;
+  failedLessonIds?: ReadonlySet<string>;
 }) {
   const completedCount = module.lessons.filter((l) => l.status !== "empty").length;
   const hasActive = module.lessons.some((l) => l.id === selectedLessonId);
@@ -178,6 +186,7 @@ function ModuleItem({
               onDelete={() => onDeleteLesson?.(lesson)}
               onMoveUp={lessonIndex > 0 ? () => onMoveLesson?.(module, lesson.id, "up") : undefined}
               onMoveDown={lessonIndex < module.lessons.length - 1 ? () => onMoveLesson?.(module, lesson.id, "down") : undefined}
+              statusOverride={generatingLessonId === lesson.id ? "generating" : failedLessonIds?.has(lesson.id) ? "generation-error" : undefined}
             />
           ))}
           <button
@@ -207,6 +216,8 @@ export function ModuleTree({
   onAddLesson,
   onDeleteLesson,
   onMoveLesson,
+  generatingLessonId = null,
+  failedLessonIds,
   className,
 }: ModuleTreeProps) {
   const totalLessons = modules.reduce((acc, m) => acc + m.lessons.length, 0);
@@ -243,6 +254,8 @@ export function ModuleTree({
             onAddLesson={onAddLesson}
             onDeleteLesson={onDeleteLesson}
             onMoveLesson={onMoveLesson}
+            generatingLessonId={generatingLessonId}
+            failedLessonIds={failedLessonIds}
           />
         ))}
       </div>

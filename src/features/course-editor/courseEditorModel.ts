@@ -17,8 +17,10 @@ export const StatusBadgeMap: Record<
   "has-issues": { label: "Есть замечания", dot: "#F1C40F", text: "text-orange-700" },
   generated: { label: "Сгенерировано", dot: "#4A90E2", text: "text-[#4A90E2]" },
   edited: { label: "Отредактировано", dot: "#8B5CF6", text: "text-violet-700" },
-  draft: { label: "Не заполнен", dot: "#9CA3AF", text: "text-gray-600" },
-  empty: { label: "Не заполнен", dot: "#D1D5DB", text: "text-gray-500" },
+  draft: { label: "Не сгенерирован", dot: "#9CA3AF", text: "text-gray-600" },
+  empty: { label: "Не сгенерирован", dot: "#D1D5DB", text: "text-gray-500" },
+  generating: { label: "Генерируется", dot: "#4A90E2", text: "text-[#4A90E2]" },
+  "generation-error": { label: "Ошибка генерации", dot: "#E74C3C", text: "text-red-700" },
 };
 
 export function getSeverityConfig(severity: QaSeverity | string): {

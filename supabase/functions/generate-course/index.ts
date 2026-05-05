@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type Rec = Record<string, unknown>;
-type GenerationDepth = "plan" | "plan_lessons" | "full";
+type GenerationDepth = "plan";
 
 type ErrorCode =
   | "UNAUTHORIZED"
@@ -116,12 +116,8 @@ async function getOwnedCourse(db: SupabaseClient, courseId: string, userId: stri
   if (clean(course.author_id) !== userId) throw new AppError("FORBIDDEN", "Нет доступа к курсу", 403);
   return course;
 }
-function normalizeDepth(value: unknown, fallback: unknown): GenerationDepth {
-  const raw = clean(value) || clean(fallback) || "plan";
-  if (raw === "plan" || raw === "plan_only") return "plan";
-  if (raw === "plan_lessons" || raw === "lessons") return "plan_lessons";
-  if (raw === "full" || raw === "full_course") return "full";
-  throw new AppError("INVALID_INPUT", "Неизвестная глубина генерации", 400, { generation_depth: raw });
+function normalizeDepth(_value: unknown, _fallback: unknown): GenerationDepth {
+  return "plan";
 }
 async function invokeInternal(req: Request, functionName: string, body: Rec): Promise<Rec> {
   const baseUrl = env("SUPABASE_URL").replace(/\/+$/, "");
@@ -191,12 +187,6 @@ function validateDepthResult(depth: GenerationDepth, metrics: Awaited<ReturnType
   if (metrics.moduleCount < 1 || metrics.lessonCount < 1) {
     throw new AppError("GENERATION_DEPTH_INCOMPLETE", "Не удалось создать структуру курса", 500, { depth, metrics });
   }
-  if ((depth === "plan_lessons" || depth === "full") && metrics.filledLessonCount < metrics.lessonCount) {
-    throw new AppError("GENERATION_DEPTH_INCOMPLETE", "Курс создан частично: не все уроки получили материалы", 500, { depth, metrics });
-  }
-  if (depth === "full" && (metrics.courseQuizCount < 1 || metrics.qaReportCount < 1 || metrics.versionCount < 1)) {
-    throw new AppError("GENERATION_DEPTH_INCOMPLETE", "Курс создан частично: не все этапы полного курса завершены", 500, { depth, metrics });
-  }
 }
 async function setStatus(db: SupabaseClient, courseId: string, status: "plan" | "partial" | "ready"): Promise<void> {
   const { error } = await db.from("courses").update({ status }).eq("id", courseId);
@@ -233,34 +223,7 @@ Deno.serve(async (req: Request) => {
       progress.push({ step: "plan", status: "skipped" });
     }
 
-    if (depth === "plan_lessons" || depth === "full") {
-      progress.push({ step: "lessons", status: "started" });
-      const content = await invokeInternal(req, "generate-course-content", { course_id: courseId, force, retry_count: 2 });
-      progress.push({
-        step: "lessons",
-        status: Array.isArray(content.failed_lessons) && content.failed_lessons.length > 0 ? "partial" : "completed",
-        generated_lessons: content.generated_lessons ?? [],
-        skipped_lessons: content.skipped_lessons ?? [],
-        failed_lessons: content.failed_lessons ?? [],
-        version_id: clean(content.version_id) || null,
-      });
-    }
-
-    if (depth === "full") {
-      metrics = await loadMetrics(db, courseId);
-      if (metrics.courseQuizCount === 0 || force) {
-        progress.push({ step: "quiz", status: "started" });
-        const quiz = await invokeInternal(req, "generate-course-quiz", { course_id: courseId, force, questions_count: 10 });
-        progress.push({ step: "quiz", status: "completed", quiz_id: clean(quiz.quiz_id) || null, version_id: clean(quiz.version_id) || null });
-      } else {
-        progress.push({ step: "quiz", status: "skipped" });
-      }
-
-      progress.push({ step: "qa", status: "started" });
-      const qa = await invokeInternal(req, "run-course-qa", { course_id: courseId });
-      const report = asRecord(qa.report);
-      progress.push({ step: "qa", status: "completed", report_id: clean(report?.id) || null });
-    }
+    progress.push({ step: "lessons", status: "disabled", message: "Содержимое уроков теперь генерируется отдельно из редактора." });
 
     const finalMetrics = await loadMetrics(db, courseId);
     try {
@@ -270,10 +233,10 @@ Deno.serve(async (req: Request) => {
       throw error;
     }
 
-    await setStatus(db, courseId, depth === "plan" ? "plan" : "ready");
+    await setStatus(db, courseId, "plan");
     await writeAuditLog(db, { userId, courseId, action: "generate_course_completed", metadata: { generation_depth: depth, metrics: finalMetrics, progress } });
 
-    return jsonResponse({ course_id: courseId, generation_depth: depth, status: depth === "plan" ? "plan" : "ready", metrics: finalMetrics, progress });
+    return jsonResponse({ course_id: courseId, generation_depth: depth, status: "plan", metrics: finalMetrics, progress });
   } catch (error) {
     if (courseId && userId) {
       await writeAuditLog(db, {

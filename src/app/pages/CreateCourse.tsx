@@ -13,14 +13,12 @@ import {
   type CreateCourseFormValues,
   type CreateCourseGenerationMode,
 } from "@/entities/course/createCourseDraft";
-import { GENERATION_DEPTH_OPTIONS, generationDepthLabel } from "@/entities/course/types";
 import {
   Sparkles,
   FileText,
   ArrowLeft,
   ArrowRight,
   Check,
-  Target,
   Clock,
   Layers,
   BookOpen,
@@ -477,70 +475,22 @@ function StepOptions({ data, update }: { data: FormData; update: (p: Partial<For
     <>
       <StepTitle
         title="Настройки генерации"
-        subtitle="Выберите, насколько подробным будет курс"
+        subtitle="Сначала будет создан план курса. Содержимое уроков генерируется отдельно."
       />
       <div className="flex flex-col gap-5 sm:gap-6">
-        {/* Depth */}
-        <div>
-          <FieldLabel label="Глубина генерации" />
-          <div className="flex flex-col gap-2">
-            {GENERATION_DEPTH_OPTIONS.map((opt) => {
-              const active = data.generationDepth === opt.value;
-              return (
-                <label
-                  key={opt.value}
-                  className="flex min-h-[3.25rem] cursor-pointer items-start gap-3 rounded-xl p-3.5 transition-all touch-manipulation sm:min-h-0 sm:items-center sm:gap-3.5 sm:p-4"
-                  style={{
-                    fontFamily: FONT,
-                    background: active ? "rgba(74,144,226,0.04)" : "var(--bg-surface)",
-                    border: `1.5px solid ${active ? "var(--brand-blue)" : "var(--border-md)"}`,
-                    boxShadow: active ? "0 0 0 3px rgba(74,144,226,0.06)" : "none",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="generationDepth"
-                    value={opt.value}
-                    checked={active}
-                    onChange={() => update({ generationDepth: opt.value })}
-                    className="mt-0.5 size-4 shrink-0 sm:mt-0"
-                    style={{ accentColor: "var(--brand-blue)" }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        style={{
-                          fontWeight: 700, fontSize: "var(--text-sm)",
-                          color: active ? "var(--brand-blue)" : "var(--gray-900)",
-                        }}
-                      >
-                        {opt.label}
-                      </span>
-                      {opt.badge && (
-                        <span
-                          style={{
-                            fontSize: "10px", fontWeight: 700, padding: "2px 7px",
-                            borderRadius: 6,
-                            background: "rgba(46,204,113,0.08)", color: "#2ECC71",
-                          }}
-                        >
-                          {opt.badge}
-                        </span>
-                      )}
-                    </div>
-                    <span style={{ fontSize: "var(--text-xs)", color: "var(--gray-500)" }}>
-                      {opt.description}
-                    </span>
-                  </div>
-                </label>
-              );
-            })}
+        <div className="rounded-xl border border-[rgba(74,144,226,0.12)] bg-[rgba(74,144,226,0.04)] p-4">
+          <div className="mb-1 flex items-center gap-2 text-sm font-bold text-[var(--gray-900)]" style={{ fontFamily: FONT }}>
+            <Sparkles className="size-4 text-[var(--brand-blue)]" />
+            Поэтапное наполнение
           </div>
+          <p className="text-[length:var(--text-xs)] leading-[var(--leading-relaxed)] text-[var(--gray-600)]" style={{ fontFamily: FONT }}>
+            Система создаст только структуру: модули, уроки, цели, краткие описания, результаты и тайминг.
+            После этого откройте урок в редакторе и нажмите «Сгенерировать урок». Курс можно наполнять постепенно.
+          </p>
         </div>
 
-        {/* Format */}
         <div>
-          <FieldLabel label="Формат материала" hint="Как будет подаваться информация" />
+          <FieldLabel label="Формат материала" hint="Как будет подаваться информация в будущих уроках" />
           <SegmentedPicker
             options={FORMATS}
             value={data.format}
@@ -557,7 +507,6 @@ function StepReview({ data }: { data: FormData }) {
     { icon: BookOpen, label: "Тема",         value: data.topic             },
     { icon: Layers,   label: "Уровень",      value: data.level             },
     { icon: Clock,    label: "Длительность", value: data.duration          },
-    { icon: Target,   label: "Глубина",      value: generationDepthLabel(data.generationDepth) },
     { icon: Sparkles, label: "Формат",       value: data.format            },
     ...(data.type === "source" ? [{ icon: FileText, label: "Источник", value: `${data.sourceContent.length} симв.` }] : []),
   ];
@@ -610,11 +559,7 @@ function StepReview({ data }: { data: FormData }) {
           className="text-[length:var(--text-xs)] leading-[var(--leading-relaxed)] text-[var(--gray-600)]"
           style={{ fontFamily: FONT }}
         >
-          {data.generationDepth === "plan"
-            ? "Будет создана структура курса с модулями и уроками."
-            : data.generationDepth === "plan_lessons"
-              ? "Будут созданы структура курса и материалы для всех уроков."
-              : "Будут созданы структура, материалы уроков, проверочные вопросы и проверка качества."} Если выбран режим по источнику, материал будет основан на введённом тексте.
+          Сначала будет создан план курса: модули, уроки, цели, краткие описания, ожидаемые результаты и тайминг. Содержимое уроков и квизы не создаются автоматически. Откройте урок и нажмите «Сгенерировать урок». Если выбран режим по источнику, план будет основан на введённом тексте.
         </p>
       </div>
     </>
@@ -682,7 +627,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
         toast.success("Курс создан");
         const generated = await runCourseGenerationSession(
           id,
-          { depth: data.generationDepth },
+          { depth: "plan" },
           (progress) => setGenerationProgress(progress),
         );
         setCreating(false);
@@ -693,7 +638,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
           return;
         }
         if (generated.data?.status === "partially_completed") {
-          const message = toUserErrorMessage(generated.data.last_error_message, "Курс создан частично. Проверьте материалы и повторите генерацию для пустых уроков.");
+          const message = toUserErrorMessage(generated.data.last_error_message, "Курс создан частично. Проверьте структуру и повторите генерацию плана при необходимости.");
           toast.error(message);
           navigate(`/app/plan/${id}`, { state: { generationError: message } });
           return;
@@ -817,7 +762,7 @@ function CourseCreationFlow({ initialType }: FlowProps) {
               style={{ opacity: creating || !user?.id || !ok ? 0.5 : 1, cursor: creating || !user?.id || !ok ? "not-allowed" : "pointer" }}
             >
               <Sparkles className="size-4 shrink-0" />
-              {creating ? generationProgress?.progress.message ?? "Создаём курс…" : "Сгенерировать курс"}
+              {creating ? generationProgress?.progress.message ?? "Создаём курс…" : "Создать план курса"}
             </button>
           ) : (
             <button

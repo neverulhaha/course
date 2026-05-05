@@ -30,10 +30,10 @@ interface IntelligenceRailProps {
   className?: string;
   busy?: boolean;
   onGenerateLesson?: () => void;
-  onGenerateCourseContent?: () => void;
   onRegenerateBlock?: (blockType: AiBlockType, command: AiBlockCommand) => void;
   onGenerateLessonQuiz?: () => void;
   onGenerateCourseQuiz?: () => void;
+  canGenerateCourseQuiz?: boolean;
 }
 
 const AI_ACTIONS: ReadonlyArray<{
@@ -181,7 +181,7 @@ function GenerationProgressSection({ modules }: { modules: ModuleSummary[] }) {
     return (
       <RailSection title="Генерация">
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold leading-5 text-slate-600">
-          Материалы уроков ещё не созданы. Сначала сгенерируйте содержание курса или отдельного урока.
+          Материалы уроков ещё не созданы. Откройте конкретный урок и нажмите «Сгенерировать урок».
         </div>
       </RailSection>
     );
@@ -191,7 +191,7 @@ function GenerationProgressSection({ modules }: { modules: ModuleSummary[] }) {
     return (
       <RailSection title="Генерация">
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold leading-5 text-amber-800">
-          Сгенерированы не все уроки: {generated} из {total}. Можно повторить генерацию для оставшихся {empty}.
+          Сгенерированы не все уроки: {generated} из {total}. Продолжайте наполнять курс по одному уроку.
         </div>
       </RailSection>
     );
@@ -206,7 +206,7 @@ function GenerationProgressSection({ modules }: { modules: ModuleSummary[] }) {
   );
 }
 
-function AiActionsSection({ onGenerateLesson, onGenerateCourseContent, onRegenerateBlock, onGenerateLessonQuiz, onGenerateCourseQuiz, busy = false, sources = [], content }: Pick<IntelligenceRailProps, "onGenerateLesson" | "onGenerateCourseContent" | "onRegenerateBlock" | "onGenerateLessonQuiz" | "onGenerateCourseQuiz" | "busy" | "content"> & { sources?: CourseSourceSummary[] }) {
+function AiActionsSection({ onGenerateLesson, onRegenerateBlock, onGenerateLessonQuiz, onGenerateCourseQuiz, canGenerateCourseQuiz = false, busy = false, sources = [], content }: Pick<IntelligenceRailProps, "onGenerateLesson" | "onRegenerateBlock" | "onGenerateLessonQuiz" | "onGenerateCourseQuiz" | "canGenerateCourseQuiz" | "busy" | "content"> & { sources?: CourseSourceSummary[] }) {
   const hasSources = sources.length > 0;
   const onlySource = sources.some((source) => source.onlySourceMode);
   const hasBlockContent = (blockType: AiBlockType) => Boolean(content.blocks.find((block) => block.id === blockType)?.content.trim());
@@ -227,15 +227,7 @@ function AiActionsSection({ onGenerateLesson, onGenerateCourseContent, onRegener
           disabled={busy || !onGenerateLesson}
           className="rounded-xl bg-[var(--brand-blue)] px-3 py-2.5 text-xs font-bold text-white disabled:opacity-50"
         >
-          {busy ? "Генерация…" : "Сгенерировать урок"}
-        </button>
-        <button
-          type="button"
-          onClick={onGenerateCourseContent}
-          disabled={busy || !onGenerateCourseContent}
-          className="rounded-xl border border-[var(--border-sm)] bg-[var(--bg-surface)] px-3 py-2.5 text-xs font-bold text-[var(--gray-700)] disabled:opacity-50"
-        >
-          Сгенерировать весь курс
+          {busy ? "Генерация…" : content.blocks.some((block) => block.content.trim().length > 0) ? "Перегенерировать урок" : "Сгенерировать урок"}
         </button>
         <button
           type="button"
@@ -248,10 +240,10 @@ function AiActionsSection({ onGenerateLesson, onGenerateCourseContent, onRegener
         <button
           type="button"
           onClick={onGenerateCourseQuiz}
-          disabled={busy || !onGenerateCourseQuiz}
+          disabled={busy || !onGenerateCourseQuiz || !canGenerateCourseQuiz}
           className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-xs font-bold text-violet-700 disabled:opacity-50"
         >
-          Сгенерировать итоговый квиз
+          {canGenerateCourseQuiz ? "Сгенерировать итоговый квиз" : "Итоговый квиз после всех уроков"}
         </button>
       </div>
 
@@ -420,7 +412,7 @@ function VersionSection({ courseId, course }: { courseId: string; course: Course
   );
 }
 
-export function IntelligenceRail({ courseId, lesson, content, course, onGenerateLesson, onGenerateCourseContent, onRegenerateBlock, onGenerateLessonQuiz, onGenerateCourseQuiz, busy = false, modules, sources, className }: IntelligenceRailProps) {
+export function IntelligenceRail({ courseId, lesson, content, course, onGenerateLesson, onRegenerateBlock, onGenerateLessonQuiz, onGenerateCourseQuiz, canGenerateCourseQuiz = false, busy = false, modules, sources, className }: IntelligenceRailProps) {
   return (
     <aside
       className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-y-auto bg-[var(--editor-assistant-rail)]", className)}
@@ -458,7 +450,7 @@ export function IntelligenceRail({ courseId, lesson, content, course, onGenerate
       <div style={{ flex: 1 }}>
         <QaSection courseId={courseId} lesson={lesson} content={content} />
         <GenerationProgressSection modules={modules} />
-        <AiActionsSection onGenerateLesson={onGenerateLesson} onGenerateCourseContent={onGenerateCourseContent} onRegenerateBlock={onRegenerateBlock} onGenerateLessonQuiz={onGenerateLessonQuiz} onGenerateCourseQuiz={onGenerateCourseQuiz} busy={busy} sources={sources} content={content} />
+        <AiActionsSection onGenerateLesson={onGenerateLesson} onRegenerateBlock={onRegenerateBlock} onGenerateLessonQuiz={onGenerateLessonQuiz} onGenerateCourseQuiz={onGenerateCourseQuiz} canGenerateCourseQuiz={canGenerateCourseQuiz} busy={busy} sources={sources} content={content} />
         <SourcesSection sources={sources} />
         <VersionSection courseId={courseId} course={course} />
       </div>

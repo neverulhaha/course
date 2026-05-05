@@ -1014,7 +1014,7 @@ async function generatePlan(req: Request, db: SupabaseClient, userId: string): P
     }
 
     cleanupInsertedPlan = false;
-    const versionId = await createCourseVersion(db, courseId, userId, "plan_generated", "Сгенерирован план курса");
+    const versionId = await createCourseVersion(db, courseId, userId, "plan_generation", "Сгенерирован план курса");
 
     await audit(db, {
       userId,
@@ -1218,7 +1218,7 @@ async function generateLesson(req: Request, db: SupabaseClient, userId: string):
       db,
       courseId,
       userId,
-      "lesson_content_generated",
+      "lesson_generation",
       "Сгенерировано содержание урока",
     );
 
@@ -1652,7 +1652,7 @@ async function regenerateBlock(req: Request, db: SupabaseClient, userId: string)
         db,
         courseId,
         userId,
-        "lesson_block_regenerated",
+        "lesson_block_regeneration",
         `${commandLabel(command)} ${blockLabel(blockType)} урока: ${clean(lesson.title)}`,
       );
     } catch (versionError) {
@@ -1733,7 +1733,15 @@ export function serveAction(action: Action): void {
 
       if (action === "generate-course-plan") return await generatePlan(req, db, userId);
       if (action === "generate-lesson-content") return await generateLesson(req, db, userId);
-      if (action === "generate-course-content") return await generateCourseContent(req, db, userId);
+      if (action === "generate-course-content") {
+        return jsonResponse({
+          error: {
+            code: "MASS_GENERATION_DISABLED",
+            message: "Массовая генерация уроков отключена. Откройте конкретный урок и нажмите «Сгенерировать урок».",
+            details: { generation_target: "single_lesson" },
+          },
+        }, 410);
+      }
       return await regenerateBlock(req, db, userId);
     } catch (error) {
       return errorResponse(error);

@@ -8,7 +8,6 @@ import {
   insertStep,
   jsonResponse,
   loadOwnedCourse,
-  normalizeDepth,
   readJson,
   getAuthUser,
   summarizeSession,
@@ -34,7 +33,7 @@ Deno.serve(async (req) => {
     userId = user.id;
     courseId = clean(body.course_id ?? body.courseId);
     const course = await loadOwnedCourse(db, courseId, userId);
-    const depth = normalizeDepth(body.generation_depth ?? body.generationDepth, course.generation_depth);
+    const depth = "plan";
     const force = Boolean(body.force);
 
     await db
@@ -49,7 +48,7 @@ Deno.serve(async (req) => {
       .insert({
         course_id: courseId,
         user_id: userId,
-        generation_depth: depth,
+        generation_depth: "plan",
         generation_mode: clean(course.generation_mode) || "scratch",
         status: "running",
         current_step: isSourceCourse(course) ? "prepare_source" : "generate_plan",
@@ -58,7 +57,7 @@ Deno.serve(async (req) => {
         failed_steps: 0,
         force,
         request_json: {
-          generation_depth: depth,
+          generation_depth: "plan",
           force,
           generation_mode: clean(course.generation_mode) || "scratch",
           source_mode: clean(course.source_mode) || "none",
@@ -97,7 +96,7 @@ Deno.serve(async (req) => {
 
     await db.from("generation_sessions").update({ total_steps: order - 1 }).eq("id", sessionId);
     await updateCourseStatus(db, courseId, "generating_plan");
-    await writeAuditLog(db, { userId, courseId, action: "generation_session_started", entityType: "course", entityId: courseId, metadata: { generation_depth: depth, force } });
+    await writeAuditLog(db, { userId, courseId, action: "generation_session_started", entityType: "course", entityId: courseId, metadata: { generation_depth: "plan", force } });
 
     return jsonResponse(await summarizeSession(db, sessionId));
   } catch (error) {

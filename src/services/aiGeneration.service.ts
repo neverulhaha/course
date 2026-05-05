@@ -94,7 +94,7 @@ export interface GenerationSessionSummary {
 export const startGenerationSession = (courseId: string, options: { depth?: string; force?: boolean } = {}) =>
   invoke<GenerationSessionSummary>("start-generation-session", {
     course_id: courseId,
-    generation_depth: options.depth ?? null,
+    generation_depth: "plan",
     force: Boolean(options.force),
   });
 
@@ -159,24 +159,6 @@ export const generateLessonContent = (courseId: string, lessonId: string) =>
     course_id: courseId,
     lesson_id: lessonId,
   });
-
-export const generateCourseContent = (courseId: string, options: { moduleId?: string; force?: boolean } = {}) =>
-  invoke<{
-    course_id: string;
-    generated_lessons: string[];
-    skipped_lessons: string[];
-    failed_lessons: unknown[];
-    course_status: string;
-    version_id: string | null;
-    source_mode?: boolean;
-    only_source_mode?: boolean;
-    source_warnings?: string[];
-  }>("generate-course-content", {
-    course_id: courseId,
-    module_id: options.moduleId ?? null,
-    force: Boolean(options.force),
-  });
-
 
 export const generateCourse = (courseId: string, options: { depth?: string; force?: boolean } = {}) =>
   runCourseGenerationSession(courseId, options);
