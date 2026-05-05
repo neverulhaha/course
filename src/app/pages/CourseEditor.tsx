@@ -494,7 +494,7 @@ export default function CourseEditor() {
         }
 
         if (data?.lesson_content) {
-          const nextContent = parseLessonContentRow(data.lesson_content, currentContent.goal);
+          const nextContent = parseLessonContentRow(data.lesson_content, currentContent?.goal ?? selectedLesson.objective ?? "");
           setLessonContentByLessonId((previous) => {
             const next = new Map(previous);
             next.set(selectedLesson.id, nextContent);

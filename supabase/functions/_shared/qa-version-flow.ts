@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildFreeAiHeaders, freeAiDiagnostics, getFreeAiConfig } from "./free-ai.ts";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -319,11 +320,26 @@ export function stripMarkdownJson(text: string) {
   return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
 
+function aiEnv() {
+  const config = getFreeAiConfig();
+  return { apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.model, provider: config.provider, config };
+}
+
+function extractTextContent(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    return value.map((part) => {
+      if (typeof part === "string") return part;
+      const record = asRecord(part);
+      return clean(record?.text) || clean(record?.content) || clean(asRecord(record?.text)?.value);
+    }).filter(Boolean).join("\n").trim();
+  }
+  return clean(value);
+}
+
 export async function runAiQa(snapshot: any, qaScope: "plan" | "course" = "course") {
-  const apiKey = Deno.env.get("AI_API_KEY") ?? Deno.env.get("OPENAI_API_KEY");
+  const { apiKey, baseUrl, model, provider, config } = aiEnv();
   if (!apiKey) return null;
-  const baseUrl = Deno.env.get("AI_BASE_URL") ?? "https://api.openai.com/v1";
-  const model = Deno.env.get("AI_MODEL") ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
   const compactSnapshot = compactForQa(snapshot);
   const body: any = {
     model,
@@ -333,24 +349,29 @@ export async function runAiQa(snapshot: any, qaScope: "plan" | "course" = "cours
     ],
     temperature: 0.2,
   };
-  const provider = Deno.env.get("AI_PROVIDER")?.trim().toLowerCase() || "openai";
   const responseFormatSetting = Deno.env.get("AI_USE_RESPONSE_FORMAT")?.trim().toLowerCase();
   const useResponseFormatByDefault = responseFormatSetting === "true" || (!responseFormatSetting && provider !== "openrouter");
 
   async function requestQa(useResponseFormat: boolean) {
     const requestBody = { ...body };
     if (useResponseFormat) requestBody.response_format = { type: "json_object" };
+    const headers = buildFreeAiHeaders(config);
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(requestBody),
     });
-    const json = await response.json().catch(() => null);
-    if (!response.ok) throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, { status: response.status, message: clean(asRecord(asRecord(json)?.error)?.message), used_response_format: useResponseFormat });
-    const content = json?.choices?.[0]?.message?.content;
-    if (!content) return null;
+    const rawResponse = await response.text();
+    let json: any = null;
+    try { json = rawResponse ? JSON.parse(rawResponse) : null; } catch { json = null; }
+    if (!response.ok) throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, { status: response.status, message: clean(asRecord(asRecord(json)?.error)?.message) || rawResponse.slice(0, 1000), used_response_format: useResponseFormat, ...freeAiDiagnostics(config) });
+    const firstChoice = Array.isArray(json?.choices) ? json.choices[0] : null;
+    const message = asRecord(asRecord(firstChoice)?.message);
+    const parsedObject = message?.parsed;
+    const content = extractTextContent(message?.content) || extractTextContent(asRecord(firstChoice)?.text);
+    if (!content && !(parsedObject && typeof parsedObject === "object")) return null;
     try {
-      const parsed = JSON.parse(stripMarkdownJson(content));
+      const parsed = parsedObject && typeof parsedObject === "object" ? parsedObject as any : JSON.parse(stripMarkdownJson(content));
       if (!Array.isArray(parsed.issues) || !Array.isArray(parsed.recommendations)) return null;
       return {
         ...parsed,

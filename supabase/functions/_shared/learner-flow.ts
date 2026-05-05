@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { COURSE_QUIZ_PROMPT, LESSON_QUIZ_PROMPT, renderTemplate } from "./prompts/index.ts";
+import { buildFreeAiHeaders, freeAiDiagnostics, getFreeAiConfig } from "./free-ai.ts";
 
 type Action =
   | "get-quiz-for-taking"
@@ -33,12 +34,12 @@ type ErrorCode =
   | "GENERATION_FAILED"
   | "DATABASE_ERROR";
 
-const AI_BASE_URL = Deno.env.get("AI_BASE_URL")?.trim().replace(/\/+$/, "") || "https://api.openai.com/v1";
-const AI_API_KEY = Deno.env.get("AI_API_KEY")?.trim() || Deno.env.get("OPENAI_API_KEY")?.trim() || "";
-const AI_MODEL = Deno.env.get("AI_MODEL")?.trim() || Deno.env.get("OPENAI_MODEL")?.trim() || "gpt-4o-mini";
-const AI_PROVIDER = Deno.env.get("AI_PROVIDER")?.trim().toLowerCase() || "openai";
-const AI_RESPONSE_FORMAT_SETTING = Deno.env.get("AI_USE_RESPONSE_FORMAT")?.trim().toLowerCase();
-const AI_USE_RESPONSE_FORMAT = AI_RESPONSE_FORMAT_SETTING === "true" || (!AI_RESPONSE_FORMAT_SETTING && AI_PROVIDER !== "openrouter");
+const FREE_AI = getFreeAiConfig();
+const AI_PROVIDER = FREE_AI.provider;
+const AI_BASE_URL = FREE_AI.baseUrl;
+const AI_API_KEY = FREE_AI.apiKey;
+const AI_MODEL = FREE_AI.model;
+const AI_USE_RESPONSE_FORMAT = FREE_AI.useResponseFormat;
 const MIN_SOURCE_LENGTH = Number.isFinite(Number(Deno.env.get("MIN_SOURCE_LENGTH"))) ? Math.max(1, Number(Deno.env.get("MIN_SOURCE_LENGTH"))) : 700;
 const MAX_SOURCE_CHARS = Number.isFinite(Number(Deno.env.get("MAX_SOURCE_CHARS"))) ? Math.max(MIN_SOURCE_LENGTH, Number(Deno.env.get("MAX_SOURCE_CHARS"))) : 120000;
 
@@ -281,25 +282,46 @@ function parseAiJson(raw: string): unknown {
     throw new AppError("AI_RESPONSE_INVALID", "ИИ вернул некорректный JSON", 502, { error: error instanceof Error ? error.message : String(error), preview: raw.slice(0, 400) });
   }
 }
-async function callAi(systemPrompt: string, userPrompt: string): Promise<unknown> {
-  if (!AI_API_KEY) throw new AppError("GENERATION_FAILED", "AI API ключ не настроен", 500, { missing: "AI_API_KEY" });
-  const headers: Record<string, string> = { Authorization: `Bearer ${AI_API_KEY}`, "Content-Type": "application/json" };
-  if (AI_PROVIDER === "openrouter") {
-    headers["HTTP-Referer"] = Deno.env.get("OPENROUTER_SITE_URL")?.trim() || "https://course-rosy.vercel.app";
-    headers["X-Title"] = Deno.env.get("OPENROUTER_APP_NAME")?.trim() || "Diplom Course Generator";
+
+function extractTextContent(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    return value.map((part) => {
+      if (typeof part === "string") return part;
+      const record = asRecord(part);
+      return clean(record?.text) || clean(record?.content) || clean(asRecord(record?.text)?.value);
+    }).filter(Boolean).join("\n").trim();
   }
+  return clean(value);
+}
+
+function extractAiMessagePayload(choiceRaw: unknown): { parsed: unknown | null; content: string; finishReason: string } {
+  const choice = asRecord(choiceRaw);
+  const message = asRecord(choice?.message);
+  return {
+    parsed: message?.parsed ?? null,
+    content: extractTextContent(message?.content) || extractTextContent(choice?.text),
+    finishReason: clean(choice?.finish_reason ?? choice?.finishReason),
+  };
+}
+async function callAi(systemPrompt: string, userPrompt: string): Promise<unknown> {
+  if (!AI_API_KEY) throw new AppError("GENERATION_FAILED", "AI API ключ не настроен", 500, { missing: "OPENROUTER_API_KEY", free_only: true });
+  const headers = buildFreeAiHeaders(FREE_AI);
   async function requestJson(useResponseFormat: boolean): Promise<unknown> {
     const body: Rec = { model: AI_MODEL, temperature: 0.2, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] };
     if (useResponseFormat) body.response_format = { type: "json_object" };
     const response = await fetch(`${AI_BASE_URL}/chat/completions`, { method: "POST", headers, body: JSON.stringify(body) });
-    const json = await response.json().catch(() => null);
+    const rawResponse = await response.text();
+    let json: unknown = null;
+    try { json = rawResponse ? JSON.parse(rawResponse) : null; } catch { json = null; }
     if (!response.ok) {
       const err = asRecord(asRecord(json)?.error);
-      throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, { status: response.status, message: clean(err?.message) || "AI API error", type: clean(err?.type) || null, used_response_format: useResponseFormat });
+      throw new AppError("GENERATION_FAILED", "AI API вернул ошибку", 502, { status: response.status, message: clean(err?.message) || rawResponse.slice(0, 1000) || "AI API error", type: clean(err?.type) || null, used_response_format: useResponseFormat, ...freeAiDiagnostics(FREE_AI) });
     }
     const choices = Array.isArray(asRecord(json)?.choices) ? (asRecord(json)?.choices as unknown[]) : [];
-    const content = clean(asRecord(asRecord(choices[0])?.message)?.content);
-    if (!content) throw new AppError("AI_RESPONSE_INVALID", "AI API вернул пустой ответ", 502, { used_response_format: useResponseFormat });
+    const { parsed, content, finishReason } = extractAiMessagePayload(choices[0]);
+    if (parsed && typeof parsed === "object") return parsed;
+    if (!content) throw new AppError("AI_RESPONSE_INVALID", "AI API вернул пустой ответ", 502, { used_response_format: useResponseFormat, ...freeAiDiagnostics(FREE_AI), choices_count: choices.length, finish_reason: finishReason || null, response_preview: rawResponse.slice(0, 2000) });
     return parseAiJson(content);
   }
 
@@ -309,12 +331,12 @@ async function callAi(systemPrompt: string, userPrompt: string): Promise<unknown
   } catch (error) {
     const appError = error instanceof AppError ? error : null;
     const detailsText = JSON.stringify(appError?.details ?? {}).toLowerCase();
-    const canRetryWithoutJsonMode = appError?.code === "GENERATION_FAILED" && (
+    const canRetryWithoutJsonMode = (appError?.code === "GENERATION_FAILED" && (
       detailsText.includes("response_format") ||
       detailsText.includes("json_object") ||
       detailsText.includes("structured") ||
       detailsText.includes("unsupported")
-    );
+    )) || (appError?.code === "AI_RESPONSE_INVALID" && detailsText.includes("used_response_format"));
     if (!canRetryWithoutJsonMode) throw error;
     console.warn("AI response_format is not supported by provider/model, retrying without it");
     return await requestJson(false);
