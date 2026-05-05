@@ -113,29 +113,34 @@ function ProgressWidget({ stats, fallbackCompleted, fallbackTotal, loading }: { 
   const percent = progress?.completionPercent ?? (total ? Math.round((completed / total) * 100) : 0);
   const nextTitle = stats?.nextRecommendedLesson?.title ?? null;
   const averageScore = stats?.averageQuizScore;
+  const nextLessonLabel = percent >= 100 ? "Курс завершён" : nextTitle ?? "Не выбран";
 
   return (
-    <section className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
+    <section className="w-full max-w-full overflow-hidden rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-4 shadow-sm">
+      <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--gray-400)]">Прогресс</p>
           <p className="mt-1 text-2xl font-extrabold text-[var(--gray-900)]">{loading ? "—" : `${percent}%`}</p>
         </div>
-        <div className="rounded-xl bg-[var(--brand-blue)]/10 px-3 py-2 text-right text-xs font-bold text-[var(--brand-blue)]">
+        <div className="max-w-[92px] shrink-0 rounded-xl bg-[var(--brand-blue)]/10 px-3 py-2 text-center text-xs font-bold leading-tight text-[var(--brand-blue)]">
           {completed} из {total || 0}<br />уроков
         </div>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-[var(--gray-100)]">
         <div className="h-full rounded-full bg-[var(--brand-blue)] transition-all" style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
       </div>
-      <div className="mt-4 grid gap-2 text-xs font-semibold text-[var(--gray-500)]">
-        <div className="flex justify-between gap-3">
-          <span>Следующий урок</span>
-          <span className="max-w-[55%] truncate text-right text-[var(--gray-800)]">{percent >= 100 ? "Курс завершён" : nextTitle ?? "Не выбран"}</span>
+      <div className="mt-4 space-y-2 text-xs">
+        <div className="min-w-0 rounded-xl bg-[var(--gray-50)] px-3 py-2">
+          <p className="font-bold text-[var(--gray-500)]">Следующий урок</p>
+          <p className="mt-1 line-clamp-2 break-words text-sm font-extrabold leading-snug text-[var(--gray-800)]" title={nextLessonLabel}>
+            {nextLessonLabel}
+          </p>
         </div>
-        <div className="flex justify-between gap-3">
-          <span>Средний результат тестов</span>
-          <span className="text-[var(--gray-800)]">{averageScore == null ? "—" : `${averageScore}%`}</span>
+        <div className="min-w-0 rounded-xl bg-[var(--gray-50)] px-3 py-2">
+          <p className="font-bold text-[var(--gray-500)]">Средний результат тестов</p>
+          <p className="mt-1 text-sm font-extrabold leading-snug text-[var(--gray-800)]">
+            {averageScore == null ? "—" : `${averageScore}%`}
+          </p>
         </div>
       </div>
     </section>
