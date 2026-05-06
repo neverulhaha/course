@@ -11,6 +11,7 @@ import {
   loadCourseSnapshot,
   runAiQa,
   buildRuleBasedQa,
+  buildQaContext,
   writeAuditLog,
 } from "../_shared/qa-version-flow.ts";
 
@@ -37,11 +38,11 @@ Deno.serve(async (req) => {
     }
 
     const requestedQaScope = typeof body?.qa_scope === "string" && body.qa_scope.trim() === "plan" ? "plan" : "course";
-    const courseStatus = typeof course?.status === "string" ? course.status : "";
-    const qaScope = requestedQaScope === "plan" || courseStatus === "plan" || courseStatus === "partial" ? "plan" : "course";
-    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_started", entityType: "course", entityId: courseId, metadata: { version_id: versionId, qa_scope: qaScope } });
-
     const snapshot = await loadCourseSnapshot(supabaseAdmin, courseId);
+    const qaContext = buildQaContext(snapshot, requestedQaScope);
+    const qaScope = qaContext.mode;
+    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_started", entityType: "course", entityId: courseId, metadata: { version_id: versionId, qa_scope: qaScope, qa_context: qaContext } });
+
     let qa = null;
     try {
       qa = await runAiQa(snapshot, qaScope);
@@ -64,6 +65,7 @@ Deno.serve(async (req) => {
         issues: qa.issues ?? [],
         suspicious_facts: qa.suspicious_facts ?? [],
         source_alignment: qa.source_alignment ?? null,
+        qa_scope: qa.qa_scope ?? qaContext,
         fallback: qa.fallback === true,
       },
       recommendations_json: {
@@ -80,7 +82,7 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from("course_versions").update({ qa_score: qa.total_score }).eq("id", linkedVersionId).eq("course_id", courseId);
     }
 
-    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_completed", entityType: "qa_report", entityId: report.id, metadata: { qa_report_id: report.id, version_id: linkedVersionId, total_score: qa.total_score, fallback: qa.fallback === true, qa_scope: qaScope } });
+    await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_completed", entityType: "qa_report", entityId: report.id, metadata: { qa_report_id: report.id, version_id: linkedVersionId, total_score: qa.total_score, fallback: qa.fallback === true, qa_scope: qaScope, qa_context: qa.qa_scope ?? qaContext } });
     return jsonResponse({ report });
   } catch (error) {
     if (courseId && user?.id) await writeAuditLog({ supabaseAdmin, userId: user.id, courseId, action: "run_course_qa_failed", entityType: "course", entityId: courseId, metadata: { error_code: error instanceof AppError ? error.code : "QA_FAILED", error_message: error instanceof Error ? error.message : "Unknown error" } });

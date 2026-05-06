@@ -48,6 +48,16 @@ export interface QaRecommendation {
   raw?: Record<string, unknown>;
 }
 
+export interface QaScopeInfo {
+  mode: "plan" | "current" | "course" | string;
+  total_lessons_count: number;
+  evaluated_lessons_count: number;
+  missing_content_lessons_count: number;
+  source_alignment_enabled: boolean;
+  only_source_mode: boolean;
+  message: string | null;
+}
+
 export interface QaReport {
   id: string;
   course_id: string;
@@ -65,6 +75,7 @@ export interface QaReport {
   recommendations: QaRecommendation[];
   summary: string | null;
   source_alignment_summary: string | null;
+  qa_scope: QaScopeInfo | null;
   is_fallback: boolean;
 }
 
@@ -237,7 +248,23 @@ function extractSummary(issuesJson: unknown, recommendationsJson: unknown): stri
 function extractSourceAlignmentSummary(issuesJson: unknown): string | null {
   const issueRecord = toRecord(parseJsonLike(issuesJson));
   const sourceAlignment = toRecord(issueRecord?.source_alignment);
+  if (sourceAlignment?.enabled === false) return null;
   return fallbackText(sourceAlignment?.summary) || null;
+}
+
+function extractQaScopeInfo(issuesJson: unknown): QaScopeInfo | null {
+  const issueRecord = toRecord(parseJsonLike(issuesJson));
+  const scope = toRecord(issueRecord?.qa_scope);
+  if (!scope) return null;
+  return {
+    mode: fallbackText(scope.mode) || "course",
+    total_lessons_count: num(scope.total_lessons_count) ?? 0,
+    evaluated_lessons_count: num(scope.evaluated_lessons_count) ?? 0,
+    missing_content_lessons_count: num(scope.missing_content_lessons_count) ?? 0,
+    source_alignment_enabled: scope.source_alignment_enabled === true,
+    only_source_mode: scope.only_source_mode === true,
+    message: fallbackText(scope.message) || null,
+  };
 }
 
 function extractFallbackFlag(issuesJson: unknown, recommendationsJson: unknown): boolean {
@@ -307,6 +334,7 @@ function normalizeQaReport(row: unknown): QaReport {
     recommendations: normalizeRecommendations(recommendationsJson),
     summary: extractSummary(issuesJson, recommendationsJson),
     source_alignment_summary: extractSourceAlignmentSummary(issuesJson),
+    qa_scope: extractQaScopeInfo(issuesJson),
     is_fallback: extractFallbackFlag(issuesJson, recommendationsJson),
   };
 }
@@ -414,7 +442,7 @@ export async function fetchLatestQaReport(courseId: string): Promise<{
       { name: "Структура", score: report.structure_score ?? 0 },
       { name: "Связность", score: report.coherence_score ?? 0 },
       { name: "Уровень", score: report.level_match_score ?? 0 },
-      { name: "Источники", score: report.source_alignment_score ?? 0 },
+      ...(report.source_alignment_score === null ? [] : [{ name: "Источники", score: report.source_alignment_score ?? 0 }]),
     ];
 
     const issues = report.issues.map((issue, index): QaIssueView => ({

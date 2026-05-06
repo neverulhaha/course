@@ -255,15 +255,149 @@ export function clampScore(value: unknown) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-export function buildRuleBasedQa(snapshot: any, qaScope: "plan" | "course" = "course") {
+type QaScope = "plan" | "current" | "course";
+
+const LESSON_CONTENT_FIELDS = ["theory_text", "examples_text", "practice_text", "checklist_text"];
+
+function hasMeaningfulLessonContent(row: any) {
+  return LESSON_CONTENT_FIELDS.some((field) => clean(row?.[field]).length > 0);
+}
+
+export function buildQaContext(snapshot: any, requestedScope?: QaScope) {
+  const lessons = snapshot.lessons ?? [];
+  const contents = snapshot.lesson_contents ?? [];
+  const sources = snapshot.sources ?? [];
+  const lessonIds = new Set(lessons.map((lesson: any) => lesson.id));
+  const contentLessonIds = new Set(
+    contents
+      .filter((content: any) => lessonIds.has(content.lesson_id) && hasMeaningfulLessonContent(content))
+      .map((content: any) => content.lesson_id),
+  );
+  const totalLessons = lessons.length;
+  const evaluatedLessons = contentLessonIds.size;
+  const missingContentLessons = Math.max(0, totalLessons - evaluatedLessons);
+  const sourceAlignmentEnabled = sources.length > 0;
+  const onlySourceMode = sourceAlignmentEnabled && sources.some((source: any) => Boolean(source.only_source_mode));
+  const courseStatus = clean(snapshot.course?.status).toLowerCase();
+
+  let scope: QaScope;
+  if (requestedScope === "plan") scope = "plan";
+  else if (requestedScope === "course" && courseStatus === "ready" && totalLessons > 0 && missingContentLessons === 0) scope = "course";
+  else if (evaluatedLessons > 0 && missingContentLessons > 0) scope = "current";
+  else if (evaluatedLessons > 0 && missingContentLessons === 0) scope = "course";
+  else scope = "plan";
+
+  const message = scope === "plan"
+    ? "Проверяется только структура курса: модули, уроки, цели, описания и результаты обучения. Отсутствие содержимого уроков и квизов не снижает балл."
+    : scope === "current"
+      ? `Проверяются только уже доступные материалы: ${evaluatedLessons} из ${totalLessons} уроков имеют содержимое. Остальные уроки отмечены как следующий шаг, но не снижают QA-балл.`
+      : "Проверяется полный доступный курс: структура, содержимое уроков, квизы и согласованность материалов.";
+
+  return {
+    mode: scope,
+    total_lessons_count: totalLessons,
+    evaluated_lessons_count: scope === "plan" ? 0 : evaluatedLessons,
+    missing_content_lessons_count: scope === "plan" ? totalLessons : missingContentLessons,
+    source_alignment_enabled: sourceAlignmentEnabled,
+    only_source_mode: onlySourceMode,
+    message,
+  };
+}
+
+function averageScores(scores: Array<number | null | undefined>) {
+  const normalized = scores.filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+  if (!normalized.length) return 0;
+  return Math.round(normalized.reduce((sum, score) => sum + score, 0) / normalized.length);
+}
+
+function looksLikeFutureContentIssue(item: any) {
+  const record = asRecord(item) ?? {};
+  const text = [record.type, record.title, record.description, record.reason, record.message, record.recommendation]
+    .map((value) => clean(value).toLowerCase())
+    .join(" ");
+  return [
+    "нет содержимого",
+    "не имеет lesson_contents",
+    "lesson_contents",
+    "отсутствует содержимое",
+    "нет квиз",
+    "нет quiz",
+    "отсутствует квиз",
+    "quizzes",
+    "quiz",
+  ].some((marker) => text.includes(marker));
+}
+
+function withQaContext(result: any, snapshot: any, qaScope: QaScope) {
+  const context = buildQaContext(snapshot, qaScope);
+  let issues = Array.isArray(result.issues) ? result.issues : [];
+  let recommendations = Array.isArray(result.recommendations) ? result.recommendations : [];
+
+  if (context.mode !== "course") {
+    issues = issues.filter((item: any) => !looksLikeFutureContentIssue(item));
+  }
+
+  if (context.missing_content_lessons_count > 0) {
+    recommendations = [
+      ...recommendations,
+      rec(
+        "medium",
+        context.mode === "plan" ? "Добавить содержимое уроков" : "Догенерировать оставшиеся уроки",
+        context.mode === "plan"
+          ? `Сейчас проверена структура курса. Чтобы перейти к полной QA-проверке, сгенерируйте содержимое для ${context.total_lessons_count} уроков.`
+          : `Сейчас проверены только ${context.evaluated_lessons_count} из ${context.total_lessons_count} уроков. Догенерируйте ещё ${context.missing_content_lessons_count} уроков для полной проверки курса.`,
+        "content_roadmap",
+      ),
+    ];
+  }
+
+  const hasRelevantIssues = issues.length > 0 || (Array.isArray(result.suspicious_facts) && result.suspicious_facts.length > 0);
+  const minPartialScore = !hasRelevantIssues && context.mode === "plan" ? 80 : !hasRelevantIssues && context.mode === "current" ? 76 : 0;
+  const structureScore = Math.max(clampScore(result.structure_score), minPartialScore);
+  const coherenceScore = Math.max(clampScore(result.coherence_score), minPartialScore);
+  const levelScore = Math.max(clampScore(result.level_match_score), minPartialScore);
+  const sourceScore = context.source_alignment_enabled ? clampScore(result.source_alignment_score) : null;
+  const computedTotal = averageScores([structureScore, coherenceScore, levelScore, sourceScore]);
+  const totalScore = context.source_alignment_enabled
+    ? clampScore(Math.max(Number(result.total_score) || 0, computedTotal, minPartialScore))
+    : clampScore(Math.max(computedTotal, minPartialScore));
+
+  return {
+    ...result,
+    structure_score: structureScore,
+    coherence_score: coherenceScore,
+    level_match_score: levelScore,
+    source_alignment_score: sourceScore,
+    total_score: totalScore,
+    summary: clean(result.summary) || context.message,
+    issues,
+    recommendations,
+    source_alignment: context.source_alignment_enabled
+      ? {
+          enabled: true,
+          only_source_mode: context.only_source_mode,
+          summary: clean(asRecord(result.source_alignment)?.summary) || "Проверка соответствия источнику выполнена, потому что курс содержит пользовательские источники.",
+          unsupported_claims: Array.isArray(asRecord(result.source_alignment)?.unsupported_claims) ? asRecord(result.source_alignment)?.unsupported_claims : [],
+        }
+      : {
+          enabled: false,
+          only_source_mode: false,
+          summary: "Курс не создан по источнику, поэтому параметр опоры на источники не применялся и не влияет на итоговый балл.",
+          unsupported_claims: [],
+        },
+    qa_scope: context,
+  };
+}
+
+export function buildRuleBasedQa(snapshot: any, qaScope: QaScope = "course") {
   const modules = snapshot.modules ?? [];
   const lessons = snapshot.lessons ?? [];
   const contents = snapshot.lesson_contents ?? [];
   const quizzes = snapshot.quizzes ?? [];
-  const sources = snapshot.sources ?? [];
   const issues: any[] = [];
   const recommendations: any[] = [];
-  const isPlanScope = qaScope === "plan" || ["plan", "partial"].includes(String(snapshot.course?.status ?? ""));
+  const context = buildQaContext(snapshot, qaScope);
+  const isPlanScope = context.mode === "plan";
 
   if (!modules.length) issues.push(issue("critical", "structure", "Нет модулей", "Курс не содержит модулей.", "course", snapshot.course?.id, "Сгенерируйте или добавьте модули."));
   if (!lessons.length) issues.push(issue("critical", "structure", "Нет уроков", "Курс не содержит уроков.", "course", snapshot.course?.id, "Сгенерируйте или добавьте уроки."));
@@ -272,41 +406,40 @@ export function buildRuleBasedQa(snapshot: any, qaScope: "plan" | "course" = "co
     if (!String(lesson.objective ?? "").trim()) issues.push(issue("medium", "completeness", "У урока нет цели", `Урок «${lesson.title ?? "Без названия"}» не содержит objective.`, "lesson", lesson.id, "Добавьте цель урока."));
     if (!String(lesson.summary ?? "").trim()) issues.push(issue("medium", "completeness", "У урока нет описания", `Урок «${lesson.title ?? "Без названия"}» не содержит summary.`, "lesson", lesson.id, "Добавьте краткое описание."));
     if (!String(lesson.learning_outcome ?? "").trim()) issues.push(issue("medium", "completeness", "У урока нет результата обучения", `Урок «${lesson.title ?? "Без названия"}» не содержит learning_outcome.`, "lesson", lesson.id, "Добавьте ожидаемый результат."));
-    const lc = contents.find((c: any) => c.lesson_id === lesson.id);
-    if (!lc) {
-      if (!isPlanScope) issues.push(issue("high", "content", "Нет содержимого урока", `Урок «${lesson.title ?? "Без названия"}» не имеет lesson_contents.`, "lesson", lesson.id, "Сгенерируйте или заполните содержимое урока."));
-    } else {
-      for (const field of ["theory_text", "examples_text", "practice_text", "checklist_text"]) {
-        if (!String(lc[field] ?? "").trim() && !isPlanScope) issues.push(issue("medium", "content", "Пустой блок урока", `В уроке «${lesson.title ?? "Без названия"}» пустой блок ${field}.`, "lesson_content", lc.id, "Заполните блок."));
+
+    const lc = contents.find((content: any) => content.lesson_id === lesson.id);
+    if (lc && hasMeaningfulLessonContent(lc)) {
+      const emptyFields = LESSON_CONTENT_FIELDS.filter((field) => !String(lc[field] ?? "").trim());
+      if (emptyFields.length && context.mode === "course") {
+        recommendations.push(rec("medium", "Дополнить блоки урока", `В уроке «${lesson.title ?? "Без названия"}» пустые блоки: ${emptyFields.join(", ")}.`, "lesson_content"));
       }
     }
   }
 
-  if (!quizzes.length && !isPlanScope) recommendations.push(rec("medium", "Добавить квизы", "В курсе нет квизов. Добавьте квиз к ключевым урокам или итоговый квиз.", "quizzes"));
-  const sourceMode = String(snapshot.course?.generation_mode ?? "").includes("source") || String(snapshot.course?.source_mode ?? "").includes("source") || sources.length > 0;
-  const onlySourceMode = sources.some((s: any) => s.only_source_mode);
-  if (sourceMode && !sources.length) issues.push(issue("high", "source", "Нет источника", "Курс выглядит созданным по источнику, но sources пустой.", "course", snapshot.course?.id, "Добавьте источник или отключите source mode."));
+  if (!isPlanScope && !quizzes.length) {
+    recommendations.push(rec("medium", "Добавить квизы", "В доступной части курса пока нет квизов. Добавьте квиз к ключевым урокам или итоговый квиз, когда будете готовы к полной проверке.", "quizzes"));
+  }
 
-  const completenessPenalty = Math.min(45, issues.filter((x) => x.severity === "high" || x.severity === "critical").length * 12 + issues.filter((x) => x.severity === "medium").length * 4);
-  const structureScore = modules.length && lessons.length ? 85 : 30;
-  const coherenceScore = isPlanScope ? 86 : Math.max(40, 90 - Math.max(0, lessons.length - contents.length) * 5);
-  const levelScore = 80;
-  const sourceScore = sourceMode ? (sources.length ? 82 : 25) : 100;
-  const total = Math.max(0, Math.round((structureScore + coherenceScore + levelScore + sourceScore) / 4 - completenessPenalty));
+  const completenessPenalty = Math.min(35, issues.filter((x) => x.severity === "high" || x.severity === "critical").length * 12 + issues.filter((x) => x.severity === "medium").length * 4);
+  const structureScore = modules.length && lessons.length ? 88 : 30;
+  const coherenceScore = context.mode === "plan" ? 86 : 88;
+  const levelScore = 82;
+  const sourceScore = context.source_alignment_enabled ? 84 : null;
+  const baseTotal = averageScores([structureScore, coherenceScore, levelScore, sourceScore]);
 
-  return {
+  return withQaContext({
     structure_score: clampScore(structureScore - completenessPenalty / 2),
     coherence_score: clampScore(coherenceScore - completenessPenalty / 3),
     level_match_score: clampScore(levelScore),
-    source_alignment_score: clampScore(sourceScore),
-    total_score: clampScore(total),
-    summary: isPlanScope ? "Выполнена QA-проверка структуры курса. Отсутствие содержания уроков не считается ошибкой для плана." : "AI-проверка недоступна или не дала валидный ответ, выполнена базовая проверка правил.",
+    source_alignment_score: sourceScore,
+    total_score: clampScore(baseTotal - completenessPenalty),
+    summary: context.message,
     issues,
     recommendations,
     suspicious_facts: [],
-    source_alignment: { enabled: sourceMode, only_source_mode: onlySourceMode, summary: sourceMode ? "Проверено наличие источника и режима only_source_mode." : "Source mode не включён.", unsupported_claims: [] },
+    source_alignment: null,
     fallback: true,
-  };
+  }, snapshot, context.mode);
 }
 
 function issue(severity: string, type: string, title: string, description: string, entity_type: string, entity_id: string | null, recommendation: string) {
@@ -337,15 +470,24 @@ function extractTextContent(value: unknown): string {
   return clean(value);
 }
 
-export async function runAiQa(snapshot: any, qaScope: "plan" | "course" = "course") {
+export async function runAiQa(snapshot: any, qaScope: QaScope = "course") {
   const { apiKey, baseUrl, model, provider, config } = aiEnv();
   if (!apiKey) return null;
+  const context = buildQaContext(snapshot, qaScope);
   const compactSnapshot = compactForQa(snapshot);
+  const sourceRule = context.source_alignment_enabled
+    ? "Курс создан по пользовательскому источнику: оцени source_alignment_score и неподтверждённые тезисы."
+    : "Курс НЕ создан по источнику: не оценивай соответствие источникам, верни source_alignment.enabled=false, source_alignment_score=null и не включай источники в total_score.";
+  const scopeRule = context.mode === "plan"
+    ? "Проверяй только план: модули, уроки, цели, описания, тайминг и результаты обучения. Отсутствие lesson_contents, квизов и практики НЕ является ошибкой и НЕ снижает балл; добавь это только как рекомендацию/следующий шаг."
+    : context.mode === "current"
+      ? `Проверяй только то, что уже есть сейчас: структуру курса и содержимое ${context.evaluated_lessons_count} из ${context.total_lessons_count} уроков. Уроки без lesson_contents, отсутствующие квизы и будущие блоки НЕ являются ошибкой и НЕ снижают балл; добавь отдельную рекомендацию догенерировать ${context.missing_content_lessons_count} уроков.`
+      : "Проверяй полный доступный курс: структуру, содержимое всех уроков, квизы, задания и согласованность материалов.";
   const body: any = {
     model,
     messages: [
-      { role: "system", content: "Ты QA-эксперт образовательных курсов. Верни только валидный JSON без markdown." },
-      { role: "user", content: `Режим QA: ${qaScope === "plan" ? "проверка только структуры/плана; отсутствие lesson_contents и квизов НЕ является ошибкой" : "проверка курса"}. Проверь качество курса. Оцени структуру, связность, уровень, соответствие источнику, квизы и подозрительные факты. Верни JSON со схемой: {"structure_score":0,"coherence_score":0,"level_match_score":0,"source_alignment_score":0,"total_score":0,"summary":"","issues":[],"recommendations":[],"suspicious_facts":[],"source_alignment":{"enabled":false,"only_source_mode":false,"summary":"","unsupported_claims":[]}}. Данные курса:\n${JSON.stringify(compactSnapshot)}` },
+      { role: "system", content: "Ты QA-эксперт образовательных курсов. Верни только валидный JSON без markdown. Не штрафуй курс за части, которые ещё не созданы, если режим QA не полный." },
+      { role: "user", content: `Режим QA: ${context.mode}. ${scopeRule} ${sourceRule} Верни JSON со схемой: {"structure_score":0,"coherence_score":0,"level_match_score":0,"source_alignment_score":null,"total_score":0,"summary":"","issues":[],"recommendations":[],"suspicious_facts":[],"source_alignment":{"enabled":false,"only_source_mode":false,"summary":"","unsupported_claims":[]}}. Контекст QA: ${JSON.stringify(context)}. Данные курса:\n${JSON.stringify(compactSnapshot)}` },
     ],
     temperature: 0.2,
   };
@@ -374,12 +516,7 @@ export async function runAiQa(snapshot: any, qaScope: "plan" | "course" = "cours
       const parsed = parsedObject && typeof parsedObject === "object" ? parsedObject as any : JSON.parse(stripMarkdownJson(content));
       if (!Array.isArray(parsed.issues) || !Array.isArray(parsed.recommendations)) return null;
       return {
-        ...parsed,
-        structure_score: clampScore(parsed.structure_score),
-        coherence_score: clampScore(parsed.coherence_score),
-        level_match_score: clampScore(parsed.level_match_score),
-        source_alignment_score: clampScore(parsed.source_alignment_score),
-        total_score: clampScore(parsed.total_score),
+        ...withQaContext(parsed, snapshot, context.mode),
         fallback: false,
       };
     } catch {
