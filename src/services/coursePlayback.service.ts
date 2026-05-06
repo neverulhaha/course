@@ -32,6 +32,19 @@ function strArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => str(item)).filter(Boolean) as string[] : [];
 }
 
+export type AssignmentCriterionView = { criterion: string; weight: number | null };
+
+function assignmentCriteriaFromValue(value: unknown): AssignmentCriterionView[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const rec = asRecord(item);
+    const criterion = str(rec?.criterion) ?? str(rec?.title) ?? str(rec?.name) ?? str(item);
+    if (!criterion) return null;
+    const weight = num(rec?.weight ?? rec?.points ?? rec?.score);
+    return { criterion, weight };
+  }).filter(Boolean) as AssignmentCriterionView[];
+}
+
 function mapAssignmentReview(row: Record<string, unknown> | null): AssignmentReviewView | null {
   if (!row) return null;
   const reviewJson = asRecord(row.review_json) ?? {};
@@ -455,25 +468,41 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
   assignmentStatus: string | null;
   assignmentText: string | null;
   assignmentReview: AssignmentReviewView | null;
+  assignmentExpectedAnswer: string | null;
+  assignmentCriteria: AssignmentCriterionView[];
   error: string | null;
 }> {
   const access = await getLessonAccessStatus(lessonId, courseId);
-  if (access.status !== "ok") return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, assignmentReview: null, error: access.status === "error" ? access.error ?? "Не удалось проверить доступ к уроку." : access.status };
+  if (access.status !== "ok") return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, assignmentReview: null, assignmentExpectedAnswer: null, assignmentCriteria: [], error: access.status === "error" ? access.error ?? "Не удалось проверить доступ к уроку." : access.status };
 
   const { data: les } = await supabase.from("lessons").select("id, title, module_id, objective, summary, estimated_duration, learning_outcome").eq("id", lessonId).maybeSingle();
   const lr = asRecord(les);
-  if (!lr) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, assignmentReview: null, error: "not_found" };
+  if (!lr) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, assignmentReview: null, assignmentExpectedAnswer: null, assignmentCriteria: [], error: "not_found" };
   const mid = str(lr.module_id);
   let moduleTitle = "—";
   if (mid) {
     const { data: mod } = await supabase.from("modules").select("title, course_id").eq("id", mid).maybeSingle();
     const mr = asRecord(mod);
-    if (str(mr?.course_id) !== courseId) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, assignmentReview: null, error: "forbidden" };
+    if (str(mr?.course_id) !== courseId) return { moduleTitle: "—", lessonTitle: "—", content: null, quizId: null, quizTitle: null, attemptsCount: 0, bestScore: null, completed: false, assignmentStatus: null, assignmentText: null, assignmentReview: null, assignmentExpectedAnswer: null, assignmentCriteria: [], error: "forbidden" };
     moduleTitle = str(mr?.title) ?? "—";
   }
 
-  const { data: lc } = await supabase.from("lesson_contents").select("theory_text, examples_text, practice_text, checklist_text").eq("lesson_id", lessonId).maybeSingle();
-  const content = lc ? asRecord(lc) : null;
+  let content: Record<string, unknown> | null = null;
+  const extendedContent = await supabase
+    .from("lesson_contents")
+    .select("theory_text, examples_text, practice_text, checklist_text, expected_answer_text, assessment_criteria_json")
+    .eq("lesson_id", lessonId)
+    .maybeSingle();
+  if (extendedContent.error) {
+    const fallbackContent = await supabase
+      .from("lesson_contents")
+      .select("theory_text, examples_text, practice_text, checklist_text")
+      .eq("lesson_id", lessonId)
+      .maybeSingle();
+    content = fallbackContent.data ? asRecord(fallbackContent.data) : null;
+  } else {
+    content = extendedContent.data ? asRecord(extendedContent.data) : null;
+  }
 
   const { data: quizRow } = await supabase.from("quizzes").select("id, title").eq("lesson_id", lessonId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   const quiz = asRecord(quizRow);
@@ -529,7 +558,22 @@ export async function fetchPlayerLessonPayload(courseId: string, lessonId: strin
     lesson_learning_outcome: str(lr.learning_outcome) ?? null,
   };
 
-  return { moduleTitle, lessonTitle: str(lr.title) ?? "Урок", content: contentWithLessonMeta, quizId, quizTitle: str(quiz?.title) ?? null, attemptsCount, bestScore, completed, assignmentStatus, assignmentText, assignmentReview, error: null };
+  return {
+    moduleTitle,
+    lessonTitle: str(lr.title) ?? "Урок",
+    content: contentWithLessonMeta,
+    quizId,
+    quizTitle: str(quiz?.title) ?? null,
+    attemptsCount,
+    bestScore,
+    completed,
+    assignmentStatus,
+    assignmentText,
+    assignmentReview,
+    assignmentExpectedAnswer: str(contentWithLessonMeta.expected_answer_text) ?? null,
+    assignmentCriteria: assignmentCriteriaFromValue(contentWithLessonMeta.assessment_criteria_json),
+    error: null,
+  };
 }
 
 export async function fetchQuizForTaking(quizId: string): Promise<{ title: string; questions: QuizQuestionView[]; error: string | null }> {
@@ -591,13 +635,23 @@ export async function insertLessonCompletion(_userId: string, lessonId: string, 
   return { error: error ? new Error(error) : null, progress: data?.progress };
 }
 
-export async function submitLessonAssignment(courseId: string, lessonId: string, text: string): Promise<{ error: Error | null; submission?: unknown; progress?: unknown; review?: AssignmentReviewView | null; reviewWarning?: string | null }> {
-  const { data, error } = await submitAssignmentViaFunction(courseId, lessonId, text);
+export async function submitLessonAssignment(courseId: string, lessonId: string, text: string, review?: AssignmentReviewView | null): Promise<{ error: Error | null; submission?: unknown; progress?: unknown; review?: AssignmentReviewView | null; reviewWarning?: string | null }> {
+  const reviewPayload = review ? {
+    score: review.score,
+    status: review.status,
+    feedback: review.feedback,
+    strengths: review.strengths,
+    improvements: review.improvements,
+    criteria: review.criteria,
+    suggested_answer: review.suggestedAnswer,
+    warnings: review.warnings,
+  } : null;
+  const { data, error } = await submitAssignmentViaFunction(courseId, lessonId, text, reviewPayload);
   return {
     error: error ? new Error(error) : null,
     submission: data?.submission,
     progress: data?.progress,
-    review: mapAssignmentReview({ review_json: data?.review, review_score: asRecord(data?.review)?.score, review_status: asRecord(data?.review)?.status, review_feedback: asRecord(data?.review)?.feedback }),
+    review: mapAssignmentReview({ review_json: data?.review, review_score: asRecord(data?.review)?.score, review_status: asRecord(data?.review)?.status, review_feedback: asRecord(data?.review)?.feedback }) ?? review ?? null,
     reviewWarning: str(data?.review_warning),
   };
 }

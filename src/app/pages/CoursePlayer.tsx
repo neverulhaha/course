@@ -23,6 +23,7 @@ import {
   insertLessonCompletion,
   lessonContentToPlayerBlocks,
   submitLessonAssignment,
+  type AssignmentCriterionView,
   type AssignmentReviewView,
 } from "@/services/coursePlayback.service";
 import { getCourseLearningStats, recalculateProgress, type CourseLearningStats } from "@/services/progress.service";
@@ -47,6 +48,8 @@ type LessonViewData = {
   assignmentStatus: string | null;
   assignmentText: string | null;
   assignmentReview: AssignmentReviewView | null;
+  assignmentExpectedAnswer: string | null;
+  assignmentCriteria: AssignmentCriterionView[];
 };
 
 type PageState = "loading" | "ready" | "not_found" | "forbidden" | "error";
@@ -63,6 +66,77 @@ function asString(value: unknown): string {
 
 function clean(value: unknown): string {
   return asString(value).trim();
+}
+
+const ASSIGNMENT_STOP_WORDS = new Set([
+  "и", "в", "во", "на", "с", "со", "к", "ко", "по", "для", "от", "до", "из", "у", "о", "об", "это", "как", "что", "или", "а", "но", "если", "то", "при", "без", "не", "же", "the", "and", "or", "to", "of", "in", "is", "a", "an"
+]);
+
+function normalizeForAssignmentCheck(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[\`*_#\[\]()>~{}|]/g, " ")
+    .replace(/[^a-zа-я0-9+.#\s-]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function assignmentTokens(value: string): string[] {
+  return [...new Set(normalizeForAssignmentCheck(value).split(" ").map((token) => token.trim()).filter((token) => token.length >= 3 && !ASSIGNMENT_STOP_WORDS.has(token)))];
+}
+
+function tokenOverlapScore(answer: string, target: string): number {
+  const targetTokens = assignmentTokens(target);
+  if (!targetTokens.length) return 0;
+  const answerTokens = new Set(assignmentTokens(answer));
+  const matched = targetTokens.filter((token) => answerTokens.has(token)).length;
+  return Math.round((matched / targetTokens.length) * 100);
+}
+
+function evaluateAssignmentOnFrontend(params: {
+  submissionText: string;
+  expectedAnswer: string | null;
+  criteria: AssignmentCriterionView[];
+}): AssignmentReviewView {
+  const { submissionText, expectedAnswer, criteria } = params;
+  const normalizedSubmission = normalizeForAssignmentCheck(submissionText);
+  const criterionResults = criteria.map((item) => {
+    const overlap = tokenOverlapScore(submissionText, item.criterion);
+    const passed = overlap >= 35 || normalizedSubmission.includes(normalizeForAssignmentCheck(item.criterion));
+    return {
+      criterion: item.criterion,
+      passed,
+      comment: passed ? "Критерий найден в ответе." : "Критерий явно не отражён в ответе.",
+    };
+  });
+
+  const expectedScore = expectedAnswer ? tokenOverlapScore(submissionText, expectedAnswer) : 0;
+  const criteriaScore = criterionResults.length
+    ? Math.round((criterionResults.filter((item) => item.passed).length / criterionResults.length) * 100)
+    : 0;
+  const lengthScore = submissionText.trim().length >= 80 ? 100 : submissionText.trim().length >= 30 ? 60 : 30;
+  const scoreSources = [lengthScore];
+  if (expectedAnswer) scoreSources.push(expectedScore);
+  if (criterionResults.length) scoreSources.push(criteriaScore);
+  const score = Math.round(scoreSources.reduce((sum, item) => sum + item, 0) / scoreSources.length);
+  const passed = score >= 70;
+  const warnings: string[] = [];
+  if (!expectedAnswer) warnings.push("Для урока не найден сохранённый эталонный ответ. Проверка выполнена только по критериям и объёму ответа.");
+  if (!criterionResults.length) warnings.push("Для урока не найдены критерии проверки. Проверка выполнена по эталонному ответу и объёму ответа.");
+
+  return {
+    score,
+    status: passed ? "passed" : "needs_revision",
+    feedback: passed
+      ? "Ответ соответствует основным требованиям практического задания. Проверка выполнена по сохранённому эталону и критериям урока без вызова ИИ."
+      : "Ответ сохранён, но часть требований не совпала с эталоном или критериями. Проверьте недостающие пункты и обновите ответ.",
+    strengths: criterionResults.filter((item) => item.passed).slice(0, 4).map((item) => item.criterion),
+    improvements: criterionResults.filter((item) => !item.passed).slice(0, 4).map((item) => item.criterion),
+    criteria: criterionResults,
+    suggestedAnswer: expectedAnswer || null,
+    warnings,
+  };
 }
 
 function courseLoadState(error: string | null): PageState {
@@ -438,6 +512,8 @@ export default function CoursePlayer() {
         assignmentStatus: res.assignmentStatus,
         assignmentText: res.assignmentText,
         assignmentReview: res.assignmentReview,
+        assignmentExpectedAnswer: res.assignmentExpectedAnswer,
+        assignmentCriteria: res.assignmentCriteria,
       });
       setAssignmentText(res.assignmentText ?? "");
       setLessonLoading(false);
@@ -508,9 +584,14 @@ export default function CoursePlayer() {
       toast.error(message);
       return;
     }
+    const localReview = evaluateAssignmentOnFrontend({
+      submissionText: text,
+      expectedAnswer: lessonData?.assignmentExpectedAnswer ?? null,
+      criteria: lessonData?.assignmentCriteria ?? [],
+    });
     setAssignmentBusy(true);
     setNotice(null);
-    const result = await submitLessonAssignment(courseId, activeLesson.id, text);
+    const result = await submitLessonAssignment(courseId, activeLesson.id, text, localReview);
     setAssignmentBusy(false);
     if (result.error) {
       const message = toUserErrorMessage(result.error, "Не удалось отправить задание. Попробуйте ещё раз.");
@@ -518,9 +599,10 @@ export default function CoursePlayer() {
       toast.error(message);
       return;
     }
-    setLessonData((prev) => prev ? { ...prev, assignmentStatus: result.review?.status ?? "submitted", assignmentText: text, assignmentReview: result.review ?? prev.assignmentReview } : prev);
-    const reviewMessage = result.review ? `Практическое задание проверено: ${result.review.score ?? 0}%.` : "Практическое задание отправлено.";
-    setNotice(result.reviewWarning ? `${reviewMessage} Но автопроверка вернула предупреждение: ${result.reviewWarning}` : reviewMessage);
+    const finalReview = result.review ?? localReview;
+    setLessonData((prev) => prev ? { ...prev, assignmentStatus: finalReview.status ?? "submitted", assignmentText: text, assignmentReview: finalReview } : prev);
+    const reviewMessage = `Практическое задание проверено: ${finalReview.score ?? 0}%.`;
+    setNotice(result.reviewWarning ? `${reviewMessage} Предупреждение: ${result.reviewWarning}` : reviewMessage);
     toast.success(reviewMessage);
     void refreshLearningStats();
   };
@@ -678,7 +760,7 @@ export default function CoursePlayer() {
                 <div className="min-w-0">
                   <p className="font-extrabold text-[var(--gray-900)]">Ответ на практическое задание</p>
                   <p className="mt-1 text-sm leading-relaxed text-[var(--gray-500)]">
-                    Введите решение прямо здесь. Ответ сохранится в системе без открытия браузерного окна.
+                    Введите решение прямо здесь. Проверка выполняется в интерфейсе по заранее сохранённому эталону и критериям урока, без повторного вызова ИИ.
                   </p>
                 </div>
               </div>

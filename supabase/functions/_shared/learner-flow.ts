@@ -951,6 +951,39 @@ async function completeLesson(req: Request, db: SupabaseClient, userId: string):
   await audit(db, { userId, courseId, action: "lesson_completed", entityType: "lesson", entityId: lessonId, metadata: { lesson_id: lessonId, completion_id: clean(completion?.id), completion_percent: progress.completion_percent } });
   return jsonResponse({ completion, progress });
 }
+function sanitizeClientAssignmentReview(value: unknown): AssignmentReview | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const rawScore = Number(record.score ?? record.percent ?? record.grade);
+  const score = Math.max(0, Math.min(100, Math.round(Number.isFinite(rawScore) ? rawScore : 0)));
+  const rawStatus = clean(record.status).toLowerCase();
+  const status: "passed" | "needs_revision" = rawStatus === "passed" || rawStatus === "accepted" || rawStatus === "complete" || score >= 70 ? "passed" : "needs_revision";
+  const feedback = clean(record.feedback ?? record.comment ?? record.summary) || (status === "passed" ? "Ответ соответствует основным критериям задания." : "Ответ сохранён, но требует доработки по критериям задания.");
+  const rawCriteria = Array.isArray(record.criteria) ? record.criteria : [];
+  const criteria = rawCriteria.map((item) => {
+    const row = asRecord(item);
+    if (!row) return null;
+    const criterion = clean(row.criterion ?? row.title ?? row.name);
+    if (!criterion) return null;
+    return {
+      criterion,
+      passed: Boolean(row.passed),
+      comment: clean(row.comment ?? row.feedback ?? row.explanation),
+    };
+  }).filter(Boolean) as AssignmentReview["criteria"];
+
+  return {
+    score,
+    status,
+    feedback,
+    strengths: stringArrayFrom(record.strengths),
+    improvements: stringArrayFrom(record.improvements ?? record.recommendations),
+    criteria,
+    suggested_answer: clean(record.suggested_answer ?? record.suggestedAnswer ?? record.expected_answer ?? record.expectedAnswer),
+    warnings: stringArrayFrom(record.warnings),
+  };
+}
+
 async function submitAssignment(req: Request, db: SupabaseClient, userId: string): Promise<Response> {
   const body = await readJsonBody(req);
   const courseId = clean(body.course_id ?? body.courseId);
@@ -959,24 +992,8 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
   if (!courseId || !lessonId) throw new AppError("INVALID_INPUT", "Нужно передать course_id и lesson_id", 400);
   if (!submissionText) throw new AppError("INVALID_INPUT", "Текст задания не может быть пустым", 400);
 
-  const course = await getOwnedCourse(db, courseId, userId);
-  const { lesson, module } = await getLessonContext(db, courseId, lessonId);
-
-  let content: Rec | null = null;
-  try {
-    content = await getLessonContent(db, lessonId);
-  } catch (error) {
-    if (!(error instanceof AppError) || error.code !== "LESSON_CONTENT_NOT_FOUND") throw error;
-  }
-
-  let review: AssignmentReview | null = null;
-  let review_warning: string | null = null;
-  try {
-    review = await reviewAssignmentSubmission({ course, module, lesson, content, submissionText });
-  } catch (error) {
-    review_warning = error instanceof Error ? error.message : String(error);
-    console.warn("assignment AI review failed", error);
-  }
+  await verifyLessonAccess(db, courseId, lessonId, userId);
+  const review = sanitizeClientAssignmentReview(body.review ?? body.assignment_review ?? body.assignmentReview);
 
   const { data: existingRows } = await db.from("assignment_submissions").select("id").eq("user_id", userId).eq("lesson_id", lessonId).order("created_at", { ascending: false }).limit(1);
   const existingId = clean(asRecord((existingRows ?? [])[0])?.id);
@@ -985,8 +1002,8 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
     ...basePayload,
     review_score: review?.score ?? null,
     review_status: review?.status ?? null,
-    review_feedback: review?.feedback ?? review_warning,
-    review_json: review ? { ...review, review_warning } : { review_warning },
+    review_feedback: review?.feedback ?? null,
+    review_json: review ? { ...review, checked_by: "frontend_rule_based" } : { checked_by: "none" },
   };
 
   const writeSubmission = (data: Rec) => existingId
@@ -1003,8 +1020,8 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
   let progress: Rec | null = null;
   let progress_warning: string | null = null;
   try { progress = await recalculateProgressInternal(db, courseId, userId, lessonId); } catch (error) { progress_warning = error instanceof Error ? error.message : String(error); console.warn("progress recalc after assignment failed", error); }
-  await audit(db, { userId, courseId, action: "assignment_submitted", entityType: "lesson", entityId: lessonId, metadata: { lesson_id: lessonId, submission_id: clean(asRecord(result.data)?.id), review_score: review?.score ?? null, review_status: review?.status ?? null, review_warning, progress_warning } });
-  return jsonResponse({ submission: result.data, review, review_warning, progress, progress_warning });
+  await audit(db, { userId, courseId, action: "assignment_submitted", entityType: "lesson", entityId: lessonId, metadata: { lesson_id: lessonId, submission_id: clean(asRecord(result.data)?.id), review_score: review?.score ?? null, review_status: review?.status ?? null, checked_by: review ? "frontend_rule_based" : "none", progress_warning } });
+  return jsonResponse({ submission: result.data, review, review_warning: null, progress, progress_warning });
 }
 export function serveLearnerAction(action: Action): void {
   Deno.serve(async (req: Request) => {

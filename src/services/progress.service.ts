@@ -204,11 +204,24 @@ async function calculateLocalProgress(courseId: string, userId: string, lastOpen
 export const completeLesson = (courseId: string, lessonId: string) =>
   invoke<{ completion: unknown; progress: unknown }>("complete-lesson", { course_id: courseId, lesson_id: lessonId });
 
-export const submitAssignment = (courseId: string, lessonId: string, submissionText: string) =>
+export type AssignmentReviewPayload = {
+  score: number | null;
+  status: string | null;
+  feedback: string | null;
+  strengths?: string[];
+  improvements?: string[];
+  criteria?: Array<{ criterion: string; passed: boolean; comment?: string }>;
+  suggested_answer?: string | null;
+  suggestedAnswer?: string | null;
+  warnings?: string[];
+};
+
+export const submitAssignment = (courseId: string, lessonId: string, submissionText: string, review?: AssignmentReviewPayload | null) =>
   invoke<{ submission: unknown; review?: unknown; review_warning?: string | null; progress: unknown; progress_warning?: string | null }>("submit-assignment", {
     course_id: courseId,
     lesson_id: lessonId,
     submission_text: submissionText,
+    review: review ?? null,
   });
 
 export async function recalculateProgress(courseId: string, lastOpenedLessonId?: string | null): Promise<InvokeResult<{ progress: CourseProgress }>> {
