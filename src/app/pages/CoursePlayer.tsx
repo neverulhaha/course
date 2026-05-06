@@ -101,17 +101,25 @@ function evaluateAssignmentOnFrontend(params: {
 }): AssignmentReviewView {
   const { submissionText, expectedAnswer, criteria } = params;
   const normalizedSubmission = normalizeForAssignmentCheck(submissionText);
+  const expectedScore = expectedAnswer ? tokenOverlapScore(submissionText, expectedAnswer) : 0;
+  const matchesExpectedAnswer = Boolean(expectedAnswer && expectedScore >= 90);
+
   const criterionResults = criteria.map((item) => {
+    const normalizedCriterion = normalizeForAssignmentCheck(item.criterion);
     const overlap = tokenOverlapScore(submissionText, item.criterion);
-    const passed = overlap >= 35 || normalizedSubmission.includes(normalizeForAssignmentCheck(item.criterion));
+    const directCriterionMatch = overlap >= 35 || normalizedSubmission.includes(normalizedCriterion);
+    const passed = matchesExpectedAnswer || directCriterionMatch;
     return {
       criterion: item.criterion,
       passed,
-      comment: passed ? "Критерий найден в ответе." : "Критерий явно не отражён в ответе.",
+      comment: passed
+        ? matchesExpectedAnswer
+          ? "Ответ совпадает с сохранённым эталоном, поэтому критерий считается выполненным."
+          : "Критерий найден в ответе."
+        : "Критерий явно не отражён в ответе.",
     };
   });
 
-  const expectedScore = expectedAnswer ? tokenOverlapScore(submissionText, expectedAnswer) : 0;
   const criteriaScore = criterionResults.length
     ? Math.round((criterionResults.filter((item) => item.passed).length / criterionResults.length) * 100)
     : 0;
@@ -119,7 +127,8 @@ function evaluateAssignmentOnFrontend(params: {
   const scoreSources = [lengthScore];
   if (expectedAnswer) scoreSources.push(expectedScore);
   if (criterionResults.length) scoreSources.push(criteriaScore);
-  const score = Math.round(scoreSources.reduce((sum, item) => sum + item, 0) / scoreSources.length);
+  const calculatedScore = Math.round(scoreSources.reduce((sum, item) => sum + item, 0) / scoreSources.length);
+  const score = matchesExpectedAnswer ? Math.max(calculatedScore, 100) : calculatedScore;
   const passed = score >= 70;
   const warnings: string[] = [];
   if (!expectedAnswer) warnings.push("Для урока не найден сохранённый эталонный ответ. Проверка выполнена только по критериям и объёму ответа.");
@@ -584,11 +593,14 @@ export default function CoursePlayer() {
       toast.error(message);
       return;
     }
-    const localReview = evaluateAssignmentOnFrontend({
-      submissionText: text,
-      expectedAnswer: lessonData?.assignmentExpectedAnswer ?? null,
-      criteria: lessonData?.assignmentCriteria ?? [],
-    });
+    const hasPreviousSubmission = Boolean(lessonData?.assignmentStatus || lessonData?.assignmentText || lessonData?.assignmentReview);
+    const localReview = hasPreviousSubmission
+      ? evaluateAssignmentOnFrontend({
+        submissionText: text,
+        expectedAnswer: lessonData?.assignmentExpectedAnswer ?? null,
+        criteria: lessonData?.assignmentCriteria ?? [],
+      })
+      : null;
     setAssignmentBusy(true);
     setNotice(null);
     const result = await submitLessonAssignment(courseId, activeLesson.id, text, localReview);
@@ -760,7 +772,7 @@ export default function CoursePlayer() {
                 <div className="min-w-0">
                   <p className="font-extrabold text-[var(--gray-900)]">Ответ на практическое задание</p>
                   <p className="mt-1 text-sm leading-relaxed text-[var(--gray-500)]">
-                    Введите решение прямо здесь. Проверка выполняется в интерфейсе по заранее сохранённому эталону и критериям урока, без повторного вызова ИИ.
+                    Введите решение прямо здесь. Первая попытка проверяется через ИИ с рекомендациями по исправлению, повторные попытки — быстрой проверкой по эталону и критериям урока.
                   </p>
                 </div>
               </div>

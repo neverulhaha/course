@@ -419,6 +419,123 @@ function criteriaTextFromContent(content: Rec): string {
   return clean(content.checklist_text);
 }
 
+const ASSIGNMENT_REVIEW_STOP_WORDS = new Set([
+  "и", "в", "во", "на", "с", "со", "к", "ко", "по", "для", "от", "до", "из", "у", "о", "об", "это", "как", "что", "или", "а", "но", "если", "то", "при", "без", "не", "же",
+  "the", "and", "or", "to", "of", "in", "is", "a", "an", "with", "for"
+]);
+
+function normalizeForAssignmentMatch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[\r\t]+/g, "\n")
+    .replace(/[`*_#\[\]()>~{}|;]/g, " ")
+    .replace(/[^a-zа-я0-9+.#:=!<>\s\-/\"']/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeCodeLikeAnswer(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\r\n/g, "\n")
+    .replace(/\s+/g, "")
+    .replace(/[\"']/g, "'")
+    .trim();
+}
+
+function assignmentReviewTokens(value: string): string[] {
+  return [...new Set(normalizeForAssignmentMatch(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !ASSIGNMENT_REVIEW_STOP_WORDS.has(token)))];
+}
+
+function tokenOverlapPercent(answer: string, target: string): number {
+  const targetTokens = assignmentReviewTokens(target);
+  if (!targetTokens.length) return 0;
+  const answerTokens = new Set(assignmentReviewTokens(answer));
+  const matched = targetTokens.filter((token) => answerTokens.has(token)).length;
+  return Math.round((matched / targetTokens.length) * 100);
+}
+
+function contentCriteriaList(content: Rec | null): string[] {
+  if (!content) return [];
+  const criteria = content.assessment_criteria_json;
+  if (Array.isArray(criteria) && criteria.length > 0) {
+    return criteria.map((item) => {
+      const row = asRecord(item);
+      return clean(row?.criterion ?? row?.title ?? row?.name ?? item);
+    }).filter(Boolean);
+  }
+  return clean(content.checklist_text)
+    .split(/\n+/)
+    .map((item) => item.replace(/^[\s•*\-\d.)]+/, "").trim())
+    .filter(Boolean);
+}
+
+function deterministicAssignmentReview(params: { content: Rec | null; submissionText: string; reason: "expected_answer_match" | "ai_fallback" }): AssignmentReview {
+  const { content, submissionText, reason } = params;
+  const expectedAnswer = content ? clean(content.expected_answer_text) : "";
+  const criteriaList = contentCriteriaList(content);
+  const normalizedSubmission = normalizeForAssignmentMatch(submissionText);
+  const expectedScore = expectedAnswer ? tokenOverlapPercent(submissionText, expectedAnswer) : 0;
+  const exactCodeMatch = Boolean(expectedAnswer && normalizeCodeLikeAnswer(submissionText) === normalizeCodeLikeAnswer(expectedAnswer));
+  const matchesExpectedAnswer = exactCodeMatch || expectedScore >= 88;
+
+  const criteria = criteriaList.map((criterion) => {
+    const normalizedCriterion = normalizeForAssignmentMatch(criterion);
+    const overlap = tokenOverlapPercent(submissionText, criterion);
+    const passed = matchesExpectedAnswer || overlap >= 35 || Boolean(normalizedCriterion && normalizedSubmission.includes(normalizedCriterion));
+    return {
+      criterion,
+      passed,
+      comment: passed
+        ? matchesExpectedAnswer
+          ? "Ответ совпадает с эталоном, поэтому критерий считается выполненным."
+          : "Критерий частично отражён в ответе."
+        : "Критерий явно не отражён в ответе.",
+    };
+  });
+
+  const criteriaScore = criteria.length ? Math.round((criteria.filter((item) => item.passed).length / criteria.length) * 100) : 0;
+  const lengthScore = submissionText.trim().length >= 80 ? 100 : submissionText.trim().length >= 30 ? 60 : 30;
+  const scoreSources = [lengthScore];
+  if (expectedAnswer) scoreSources.push(exactCodeMatch ? 100 : expectedScore);
+  if (criteria.length) scoreSources.push(criteriaScore);
+  const calculatedScore = Math.round(scoreSources.reduce((sum, item) => sum + item, 0) / scoreSources.length);
+  const score = matchesExpectedAnswer ? Math.max(calculatedScore, 100) : calculatedScore;
+  const status: "passed" | "needs_revision" = score >= 70 ? "passed" : "needs_revision";
+  const failedCriteria = criteria.filter((item) => !item.passed).map((item) => item.criterion);
+  const warnings: string[] = [];
+  if (!expectedAnswer) warnings.push("Для урока не найден эталонный ответ. Быстрая проверка выполнена по критериям и объёму ответа.");
+  if (!criteria.length) warnings.push("Для урока не найдены критерии проверки. Быстрая проверка выполнена по эталонному ответу и объёму ответа.");
+  if (reason === "ai_fallback") warnings.push("ИИ-проверка первой попытки временно недоступна, поэтому применена быстрая проверка по эталону.");
+
+  return {
+    score,
+    status,
+    feedback: status === "passed"
+      ? "Ответ принят: он совпадает с эталоном или закрывает основные требования задания."
+      : "Ответ сохранён, но требует доработки. Исправьте отмеченные пункты и отправьте задание повторно.",
+    strengths: criteria.filter((item) => item.passed).slice(0, 4).map((item) => item.criterion),
+    improvements: failedCriteria.slice(0, 5),
+    criteria,
+    suggested_answer: expectedAnswer,
+    warnings,
+  };
+}
+
+async function getLessonContentOrNull(db: SupabaseClient, lessonId: string): Promise<Rec | null> {
+  try {
+    return await getLessonContent(db, lessonId);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "LESSON_CONTENT_NOT_FOUND") return null;
+    throw error;
+  }
+}
+
 async function reviewAssignmentSubmission(params: {
   course: Rec;
   module: Rec;
@@ -992,11 +1109,39 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
   if (!courseId || !lessonId) throw new AppError("INVALID_INPUT", "Нужно передать course_id и lesson_id", 400);
   if (!submissionText) throw new AppError("INVALID_INPUT", "Текст задания не может быть пустым", 400);
 
-  await verifyLessonAccess(db, courseId, lessonId, userId);
-  const review = sanitizeClientAssignmentReview(body.review ?? body.assignment_review ?? body.assignmentReview);
-
-  const { data: existingRows } = await db.from("assignment_submissions").select("id").eq("user_id", userId).eq("lesson_id", lessonId).order("created_at", { ascending: false }).limit(1);
+  const lesson = await verifyLessonAccess(db, courseId, lessonId, userId);
+  const { data: existingRows } = await db
+    .from("assignment_submissions")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("lesson_id", lessonId)
+    .order("created_at", { ascending: false })
+    .limit(1);
   const existingId = clean(asRecord((existingRows ?? [])[0])?.id);
+  const isFirstAttempt = !existingId;
+
+  const content = await getLessonContentOrNull(db, lessonId);
+  let review = sanitizeClientAssignmentReview(body.review ?? body.assignment_review ?? body.assignmentReview);
+  let checkedBy = review ? "frontend_expected_answer" : "none";
+  let reviewWarning: string | null = null;
+
+  if (isFirstAttempt) {
+    checkedBy = "ai_first_attempt";
+    try {
+      const course = await getOwnedCourse(db, courseId, userId);
+      const { module } = await getLessonContext(db, courseId, lessonId);
+      review = await reviewAssignmentSubmission({ course, module, lesson, content, submissionText });
+    } catch (error) {
+      reviewWarning = error instanceof Error ? error.message : String(error);
+      console.warn("AI assignment review failed, falling back to expected answer check", error);
+      review = deterministicAssignmentReview({ content, submissionText, reason: "ai_fallback" });
+      checkedBy = "fallback_expected_answer";
+    }
+  } else if (!review) {
+    review = deterministicAssignmentReview({ content, submissionText, reason: "expected_answer_match" });
+    checkedBy = "expected_answer_match";
+  }
+
   const submissionStatus = review?.status === "passed" ? "accepted" : review?.status === "needs_revision" ? "reviewed" : "submitted";
   const basePayload: Rec = { user_id: userId, lesson_id: lessonId, submission_text: submissionText, status: submissionStatus, updated_at: new Date().toISOString() };
   const payload: Rec = {
@@ -1004,7 +1149,7 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
     review_score: review?.score ?? null,
     review_status: review?.status ?? null,
     review_feedback: review?.feedback ?? null,
-    review_json: review ? { ...review, checked_by: "frontend_rule_based" } : { checked_by: "none" },
+    review_json: review ? { ...review, checked_by: checkedBy, first_attempt: isFirstAttempt } : { checked_by: checkedBy, first_attempt: isFirstAttempt },
   };
 
   const writeSubmission = (data: Rec) => existingId
@@ -1021,9 +1166,10 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
   let progress: Rec | null = null;
   let progress_warning: string | null = null;
   try { progress = await recalculateProgressInternal(db, courseId, userId, lessonId); } catch (error) { progress_warning = error instanceof Error ? error.message : String(error); console.warn("progress recalc after assignment failed", error); }
-  await audit(db, { userId, courseId, action: "assignment_submitted", entityType: "lesson", entityId: lessonId, metadata: { lesson_id: lessonId, submission_id: clean(asRecord(result.data)?.id), review_score: review?.score ?? null, review_status: review?.status ?? null, checked_by: review ? "frontend_rule_based" : "none", progress_warning } });
-  return jsonResponse({ submission: result.data, review, review_warning: null, progress, progress_warning });
+  await audit(db, { userId, courseId, action: "assignment_submitted", entityType: "lesson", entityId: lessonId, metadata: { lesson_id: lessonId, submission_id: clean(asRecord(result.data)?.id), review_score: review?.score ?? null, review_status: review?.status ?? null, checked_by: checkedBy, first_attempt: isFirstAttempt, review_warning: reviewWarning, progress_warning } });
+  return jsonResponse({ submission: result.data, review, review_warning: reviewWarning, checked_by: checkedBy, first_attempt: isFirstAttempt, progress, progress_warning });
 }
+
 export function serveLearnerAction(action: Action): void {
   Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
