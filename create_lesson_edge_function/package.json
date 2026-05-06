@@ -1,0 +1,10 @@
+{
+  "name": "create_lesson_edge_function",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Secure Supabase Edge Function for creating empty lessons from the frontend.",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  }
+}
