@@ -23,6 +23,7 @@ import {
   insertLessonCompletion,
   lessonContentToPlayerBlocks,
   submitLessonAssignment,
+  type AssignmentReviewView,
 } from "@/services/coursePlayback.service";
 import { getCourseLearningStats, recalculateProgress, type CourseLearningStats } from "@/services/progress.service";
 import { toast } from "sonner";
@@ -45,6 +46,7 @@ type LessonViewData = {
   bestScore: number | null;
   assignmentStatus: string | null;
   assignmentText: string | null;
+  assignmentReview: AssignmentReviewView | null;
 };
 
 type PageState = "loading" | "ready" | "not_found" | "forbidden" | "error";
@@ -77,14 +79,133 @@ function lessonStatusLabel(lesson: PlayerLesson, active: boolean) {
   return "Не начат";
 }
 
+function normalizeLessonLine(value: string): string {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^\s*#{1,6}\s+/, "")
+    .trim();
+}
+
+function stripListMarker(value: string): string {
+  return normalizeLessonLine(value)
+    .replace(/^\s*[-*]\s*\[(?: |x|X)\]\s+/, "")
+    .replace(/^\s*[\u2022\u25cf\u25aa]\s+/, "")
+    .replace(/^\s*[-*]\s+/, "")
+    .trim();
+}
+
+type RichSegment =
+  | { type: "paragraph"; text: string }
+  | { type: "ul"; items: string[] }
+  | { type: "ol"; items: string[] }
+  | { type: "checklist"; items: string[] };
+
+function parseRichSegments(text: string, checklistMode: boolean): RichSegment[] {
+  const lines = text.split(/\n+/).map(normalizeLessonLine).filter(Boolean);
+  const segments: RichSegment[] = [];
+  const pushList = (type: RichSegment["type"], item: string) => {
+    const last = segments[segments.length - 1];
+    if ((type === "ul" || type === "ol" || type === "checklist") && last?.type === type) {
+      last.items.push(item);
+    } else if (type === "ul" || type === "ol" || type === "checklist") {
+      segments.push({ type, items: [item] });
+    }
+  };
+
+  for (const line of lines) {
+    const checklistMatch = line.match(/^\s*(?:[-*]\s*)?\[(?: |x|X)\]\s+(.+)$/);
+    const orderedMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    const bulletMatch = line.match(/^\s*(?:[-*]|[\u2022\u25cf\u25aa])\s+(.+)$/);
+
+    if (checklistMatch) {
+      pushList("checklist", stripListMarker(checklistMatch[1] ?? ""));
+    } else if (orderedMatch && !checklistMode) {
+      pushList("ol", stripListMarker(orderedMatch[1] ?? ""));
+    } else if (bulletMatch) {
+      pushList(checklistMode ? "checklist" : "ul", stripListMarker(bulletMatch[1] ?? ""));
+    } else if (checklistMode && segments.length === 0 && /\u0447\u0435\u043a|\u0441\u043f\u0438\u0441\u043e\u043a|\u043a\u043e\u043d\u0442\u0440\u043e\u043b\u044c/i.test(line)) {
+      segments.push({ type: "paragraph", text: line });
+    } else if (checklistMode && lines.length > 1) {
+      pushList("checklist", stripListMarker(line));
+    } else {
+      segments.push({ type: "paragraph", text: line });
+    }
+  }
+  return segments;
+}
+
+function ChecklistItems({ items, storageKey }: { items: string[]; storageKey: string }) {
+  const [checked, setChecked] = useState<Record<number, boolean>>(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      return raw ? JSON.parse(raw) as Record<number, boolean> : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggle = (index: number) => {
+    setChecked((prev) => {
+      const next = { ...prev, [index]: !prev[index] };
+      try { window.localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <label key={`${item}-${index}`} className="flex cursor-pointer items-start gap-3 rounded-xl bg-[var(--gray-50)] px-3 py-2 text-sm leading-relaxed text-[var(--gray-700)]">
+          <input
+            type="checkbox"
+            checked={Boolean(checked[index])}
+            onChange={() => toggle(index)}
+            className="mt-1 size-4 shrink-0 rounded border-[var(--border-sm)] accent-[var(--brand-blue)]"
+          />
+          <span className={checked[index] ? "text-[var(--gray-400)] line-through" : ""}>{item}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function RichText({ text, checklistMode, storageKey }: { text: string; checklistMode?: boolean; storageKey: string }) {
+  const segments = parseRichSegments(text, Boolean(checklistMode));
+  return (
+    <div className="space-y-3 text-sm leading-relaxed text-[var(--gray-700)]">
+      {segments.map((segment, index) => {
+        if (segment.type === "paragraph") return <p key={index} className="whitespace-pre-line">{segment.text}</p>;
+        if (segment.type === "ol") {
+          return (
+            <ol key={index} className="list-decimal space-y-1.5 pl-5">
+              {segment.items.map((item, itemIndex) => <li key={`${item}-${itemIndex}`}>{item}</li>)}
+            </ol>
+          );
+        }
+        if (segment.type === "checklist") return <ChecklistItems key={index} items={segment.items} storageKey={`${storageKey}:${index}`} />;
+        return (
+          <ul key={index} className="list-disc space-y-1.5 pl-5">
+            {segment.items.map((item, itemIndex) => <li key={`${item}-${itemIndex}`}>{item}</li>)}
+          </ul>
+        );
+      })}
+    </div>
+  );
+}
+
 function BlockCard({ block }: { block: LessonBlock }) {
   const typeLabel =
-    block.type === "practice" ? "Практика" :
-    block.type === "code" ? "Пример" :
-    block.title || "Материал";
+    block.type === "practice" ? "\u041f\u0440\u0430\u043a\u0442\u0438\u043a\u0430" :
+    block.type === "code" ? "\u041f\u0440\u0438\u043c\u0435\u0440" :
+    block.title || "\u041c\u0430\u0442\u0435\u0440\u0438\u0430\u043b";
   const content = block.text || (Array.isArray(block.items) ? block.items.join("\n") : "") || block.code || "";
+  const normalizedContent = normalizeLessonLine(content);
+  const isChecklist = /\u0447\u0435\u043a|check\s*list/i.test(block.title || typeLabel);
 
-  if (!content.trim()) return null;
+  if (!normalizedContent.trim()) return null;
 
   return (
     <section className="rounded-2xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 shadow-sm">
@@ -93,15 +214,51 @@ function BlockCard({ block }: { block: LessonBlock }) {
         <span>{block.title || typeLabel}</span>
       </div>
       {block.code ? (
-        <pre className="overflow-x-auto rounded-xl bg-[var(--gray-900)] p-4 text-xs leading-relaxed text-white"><code>{block.code}</code></pre>
-      ) : Array.isArray(block.items) && block.items.length > 0 ? (
-        <ul className="space-y-2 text-sm leading-relaxed text-[var(--gray-700)]">
-          {block.items.map((item, index) => <li key={index}>• {item}</li>)}
-        </ul>
+        <pre className="overflow-x-auto rounded-xl bg-[var(--gray-900)] p-4 text-xs leading-relaxed text-white"><code>{normalizeLessonLine(block.code)}</code></pre>
       ) : (
-        <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--gray-700)]">{content}</p>
+        <RichText text={normalizedContent} checklistMode={isChecklist} storageKey={`lesson-block:${block.title}:${normalizedContent.slice(0, 80)}`} />
       )}
     </section>
+  );
+}
+
+function AssignmentReviewCard({ review }: { review: AssignmentReviewView }) {
+  const passed = review.status === "passed";
+  return (
+    <div className="mt-4 rounded-2xl border border-[var(--border-xs)] bg-[var(--gray-50)] p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gray-400)]">{"\u0410\u0432\u0442\u043e\u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430"}</p>
+          <p className="mt-1 text-sm font-extrabold text-[var(--gray-900)]">{passed ? "\u0417\u0430\u0434\u0430\u043d\u0438\u0435 \u0437\u0430\u0447\u0442\u0435\u043d\u043e" : "\u041d\u0443\u0436\u043d\u043e \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u0430\u0442\u044c"}</p>
+        </div>
+        <div className={`rounded-xl px-3 py-2 text-sm font-extrabold ${passed ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-700"}`}>
+          {review.score == null ? "-" : `${review.score}%`}
+        </div>
+      </div>
+      {review.feedback && <p className="mt-3 text-sm leading-relaxed text-[var(--gray-700)]">{review.feedback}</p>}
+      {review.criteria.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {review.criteria.map((criterion, index) => (
+            <div key={`${criterion.criterion}-${index}`} className="flex gap-2 rounded-xl bg-[var(--bg-surface)] px-3 py-2 text-xs leading-relaxed text-[var(--gray-700)]">
+              <span className={criterion.passed ? "font-bold text-emerald-600" : "font-bold text-amber-700"}>{criterion.passed ? "OK" : "!"}</span>
+              <span><strong>{criterion.criterion}</strong>{criterion.comment ? ` - ${criterion.comment}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {(review.strengths.length > 0 || review.improvements.length > 0) && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {review.strengths.length > 0 && <div><p className="text-xs font-bold text-[var(--gray-500)]">{"\u0427\u0442\u043e \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c"}</p><ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-[var(--gray-600)]">{review.strengths.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+          {review.improvements.length > 0 && <div><p className="text-xs font-bold text-[var(--gray-500)]">{"\u0427\u0442\u043e \u0443\u043b\u0443\u0447\u0448\u0438\u0442\u044c"}</p><ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-[var(--gray-600)]">{review.improvements.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+        </div>
+      )}
+      {review.suggestedAnswer && (
+        <details className="mt-3 rounded-xl bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--gray-700)]">
+          <summary className="cursor-pointer font-bold text-[var(--gray-800)]">{"\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u043f\u0440\u0438\u043c\u0435\u0440 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e\u0433\u043e \u043e\u0442\u0432\u0435\u0442\u0430"}</summary>
+          <p className="mt-2 whitespace-pre-line leading-relaxed">{review.suggestedAnswer}</p>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -280,6 +437,7 @@ export default function CoursePlayer() {
         bestScore: res.bestScore,
         assignmentStatus: res.assignmentStatus,
         assignmentText: res.assignmentText,
+        assignmentReview: res.assignmentReview,
       });
       setAssignmentText(res.assignmentText ?? "");
       setLessonLoading(false);
@@ -360,9 +518,10 @@ export default function CoursePlayer() {
       toast.error(message);
       return;
     }
-    setLessonData((prev) => prev ? { ...prev, assignmentStatus: "submitted", assignmentText: text } : prev);
-    setNotice("Практическое задание отправлено.");
-    toast.success("Практическое задание отправлено");
+    setLessonData((prev) => prev ? { ...prev, assignmentStatus: result.review?.status ?? "submitted", assignmentText: text, assignmentReview: result.review ?? prev.assignmentReview } : prev);
+    const reviewMessage = result.review ? `Практическое задание проверено: ${result.review.score ?? 0}%.` : "Практическое задание отправлено.";
+    setNotice(result.reviewWarning ? `${reviewMessage} Но автопроверка вернула предупреждение: ${result.reviewWarning}` : reviewMessage);
+    toast.success(reviewMessage);
     void refreshLearningStats();
   };
 
@@ -530,6 +689,7 @@ export default function CoursePlayer() {
                 className="min-h-36 w-full resize-y rounded-2xl border border-[var(--border-sm)] bg-[var(--gray-50)] px-4 py-3 text-sm leading-relaxed text-[var(--gray-800)] outline-none transition focus:border-[var(--brand-blue)] focus:bg-[var(--bg-surface)] focus:ring-4 focus:ring-[var(--brand-blue)]/10 disabled:opacity-60"
                 placeholder="Напишите ответ, код или пояснение к практическому заданию..."
               />
+              {lessonData.assignmentReview && <AssignmentReviewCard review={lessonData.assignmentReview} />}
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs font-semibold text-[var(--gray-500)]">
                   {lessonData.assignmentStatus ? "Ответ уже отправлен. Можно обновить его и отправить повторно." : "После отправки ответ сохранится в прогрессе урока."}

@@ -65,6 +65,8 @@ type LessonContentResult = {
   examples_text: string;
   practice_text: string;
   checklist_text: string;
+  expected_answer_text: string;
+  assessment_criteria_json: unknown[];
   warnings: string[];
 };
 
@@ -619,6 +621,38 @@ function warningsFrom(record: Rec): string[] {
   return Array.isArray(record.warnings) ? record.warnings.map(clean).filter(Boolean) : [];
 }
 
+function normalizeGeneratedText(value: unknown): string {
+  return clean(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s*\[(?: |x|X)\]\s+/gm, "")
+    .replace(/^\s*[•●▪]\s+/gm, "")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
+}
+
+function criteriaFrom(record: Rec): unknown[] {
+  const direct = record.assessment_criteria_json ?? record.assessment_criteria ?? record.criteria ?? record.rubric;
+  if (!Array.isArray(direct)) return [];
+  return direct
+    .map((item) => {
+      const row = asRecord(item);
+      if (!row) {
+        const text = normalizeGeneratedText(item);
+        return text ? { criterion: text } : null;
+      }
+      const criterion = normalizeGeneratedText(row.criterion ?? row.title ?? row.name ?? row.text ?? row.body);
+      const points = Number(row.points ?? row.weight ?? 0);
+      return criterion ? { criterion, ...(Number.isFinite(points) && points > 0 ? { points } : {}) } : null;
+    })
+    .filter(Boolean) as unknown[];
+}
+
 function validatePlanResponse(value: unknown): CoursePlan {
   const record = asRecord(value);
   if (!record || !Array.isArray(record.modules) || record.modules.length === 0) {
@@ -714,6 +748,8 @@ function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
   const exampleParts: string[] = [];
   const practiceParts: string[] = [];
   const checklistParts: string[] = [];
+  const expectedParts: string[] = [];
+  const criteriaParts: string[] = [];
 
   for (const raw of blocksRaw) {
     const block = asRecord(raw);
@@ -728,9 +764,14 @@ function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
       .replace("задание", "practice")
       .replace("чек-лист", "checklist")
       .replace("чеклист", "checklist")
+      .replace("критерии", "checklist")
+      .replace("ожидаемый ответ", "expected_answer")
+      .replace("эталон", "expected_answer")
+      .replace("ответ", "expected_answer")
       .replace("итог", "summary");
-    const title = clean(block.title ?? block.label);
-    const body = clean(block.body ?? block.content ?? block.text);
+    const title = normalizeGeneratedText(block.title ?? block.label);
+    const arrayBody = Array.isArray(block.items) ? block.items.join("\n") : Array.isArray(block.steps) ? block.steps.join("\n") : Array.isArray(block.criteria) ? block.criteria.join("\n") : "";
+    const body = normalizeGeneratedText(block.body ?? block.content ?? block.text ?? arrayBody);
     if (!body) continue;
 
     if (["introduction", "explanation", "step_by_step", "summary"].includes(type)) {
@@ -739,8 +780,13 @@ function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
       pushJoined(exampleParts, title, body);
     } else if (["practice", "reflection"].includes(type)) {
       pushJoined(practiceParts, title, body);
-    } else if (["checklist", "common_mistakes"].includes(type)) {
+    } else if (type === "checklist") {
       pushJoined(checklistParts, title, body);
+      criteriaParts.push(...body.split(/\n+/).map(normalizeGeneratedText).filter(Boolean));
+    } else if (type === "common_mistakes") {
+      pushJoined(theoryParts, title, body);
+    } else if (["expected_answer", "answer_key", "solution"].includes(type)) {
+      pushJoined(expectedParts, title, body);
     } else if ((FLEXIBLE_LESSON_BLOCK_TYPES as readonly string[]).includes(type)) {
       pushJoined(theoryParts, title, body);
     }
@@ -751,6 +797,8 @@ function mapFlexibleLessonBlocks(record: Rec): LessonContentResult {
     examples_text: exampleParts.join("\n\n"),
     practice_text: practiceParts.join("\n\n"),
     checklist_text: checklistParts.join("\n\n"),
+    expected_answer_text: expectedParts.join("\n\n"),
+    assessment_criteria_json: criteriaParts.map((criterion) => ({ criterion })),
     warnings: warningsFrom(record),
   };
 }
@@ -761,10 +809,12 @@ function validateLessonContentResponse(value: unknown): LessonContentResult {
 
   const fromFlexibleBlocks = mapFlexibleLessonBlocks(record);
   const result = {
-    theory_text: clean(record.theory_text ?? record.theory ?? record.explanation_text ?? record.content ?? record.main_text) || fromFlexibleBlocks.theory_text,
-    examples_text: clean(record.examples_text ?? record.examples ?? record.example_text) || fromFlexibleBlocks.examples_text,
-    practice_text: clean(record.practice_text ?? record.practice ?? record.assignment_text ?? record.task_text) || fromFlexibleBlocks.practice_text,
-    checklist_text: clean(record.checklist_text ?? record.checklist ?? record.criteria_text ?? record.summary_text) || fromFlexibleBlocks.checklist_text,
+    theory_text: normalizeGeneratedText(record.theory_text ?? record.theory ?? record.explanation_text ?? record.content ?? record.main_text) || fromFlexibleBlocks.theory_text,
+    examples_text: normalizeGeneratedText(record.examples_text ?? record.examples ?? record.example_text) || fromFlexibleBlocks.examples_text,
+    practice_text: normalizeGeneratedText(record.practice_text ?? record.practice ?? record.assignment_text ?? record.task_text) || fromFlexibleBlocks.practice_text,
+    checklist_text: normalizeGeneratedText(record.checklist_text ?? record.checklist ?? record.criteria_text ?? record.summary_text) || fromFlexibleBlocks.checklist_text,
+    expected_answer_text: normalizeGeneratedText(record.expected_answer_text ?? record.expected_answer ?? record.expected_solution ?? record.answer_key ?? record.solution_text) || fromFlexibleBlocks.expected_answer_text,
+    assessment_criteria_json: criteriaFrom(record).length ? criteriaFrom(record) : fromFlexibleBlocks.assessment_criteria_json,
     warnings: [...warningsFrom(record), ...fromFlexibleBlocks.warnings].filter(Boolean),
   };
 
@@ -1142,6 +1192,8 @@ async function upsertLessonContent(db: SupabaseClient, lessonId: string, content
     examples_text: content.examples_text,
     practice_text: content.practice_text,
     checklist_text: content.checklist_text,
+    expected_answer_text: content.expected_answer_text || null,
+    assessment_criteria_json: content.assessment_criteria_json ?? [],
     updated_at: new Date().toISOString(),
   };
 
@@ -1156,9 +1208,23 @@ async function upsertLessonContent(db: SupabaseClient, lessonId: string, content
   }
 
   const existingId = clean(asRecord(existing)?.id);
-  const result = existingId
-    ? await db.from("lesson_contents").update(payload).eq("id", existingId)
-    : await db.from("lesson_contents").insert(payload);
+  const writeContent = (data: Rec) => existingId
+    ? db.from("lesson_contents").update(data).eq("id", existingId)
+    : db.from("lesson_contents").insert(data);
+
+  let result = await writeContent(payload);
+  if (result.error && /expected_answer_text|assessment_criteria_json|column/i.test(result.error.message)) {
+    console.warn("lesson_contents answer-key columns are missing, saving visible content only", result.error.message);
+    const fallbackPayload = {
+      lesson_id: lessonId,
+      theory_text: content.theory_text,
+      examples_text: content.examples_text,
+      practice_text: content.practice_text,
+      checklist_text: content.checklist_text,
+      updated_at: new Date().toISOString(),
+    };
+    result = await writeContent(fallbackPayload);
+  }
 
   if (result.error) {
     throw new AppError("DATABASE_ERROR", "Не удалось сохранить содержание урока", 500, { error: result.error.message });

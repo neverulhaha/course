@@ -356,6 +356,138 @@ function courseContext(course: Rec): string {
 }
 function warningsFrom(record: Rec): string[] { return Array.isArray(record.warnings) ? record.warnings.map(clean).filter(Boolean) : []; }
 
+function stringArrayFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(clean).filter(Boolean);
+}
+
+type AssignmentReview = {
+  score: number;
+  status: "passed" | "needs_revision";
+  feedback: string;
+  strengths: string[];
+  improvements: string[];
+  criteria: Array<{ criterion: string; passed: boolean; comment: string }>;
+  suggested_answer: string;
+  warnings: string[];
+};
+
+function validateAssignmentReviewResponse(value: unknown): AssignmentReview {
+  const record = asRecord(value);
+  if (!record) throw new AppError("AI_RESPONSE_INVALID", "AI не вернул JSON проверки задания", 502);
+  const rawScore = Number(record.score ?? record.grade ?? record.percent ?? 0);
+  const score = Math.max(0, Math.min(100, Math.round(Number.isFinite(rawScore) ? rawScore : 0)));
+  const rawStatus = clean(record.status).toLowerCase();
+  const status: "passed" | "needs_revision" = rawStatus === "passed" || rawStatus === "accepted" || score >= 70 ? "passed" : "needs_revision";
+  const feedback = clean(record.feedback ?? record.comment ?? record.summary);
+  if (!feedback) throw new AppError("AI_RESPONSE_INVALID", "AI не вернул обратную связь по заданию", 502);
+
+  const criteriaRaw = Array.isArray(record.criteria) ? record.criteria : [];
+  const criteria = criteriaRaw.map((item) => {
+    const row = asRecord(item);
+    if (!row) return null;
+    const criterion = clean(row.criterion ?? row.title ?? row.name);
+    const comment = clean(row.comment ?? row.feedback ?? row.explanation);
+    if (!criterion) return null;
+    return { criterion, passed: Boolean(row.passed), comment };
+  }).filter(Boolean) as AssignmentReview["criteria"];
+
+  return {
+    score,
+    status,
+    feedback,
+    strengths: stringArrayFrom(record.strengths),
+    improvements: stringArrayFrom(record.improvements ?? record.recommendations),
+    criteria,
+    suggested_answer: clean(record.suggested_answer ?? record.expected_answer ?? record.sample_answer),
+    warnings: warningsFrom(record),
+  };
+}
+
+function safeJson(value: unknown): string {
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+function criteriaTextFromContent(content: Rec): string {
+  const criteria = content.assessment_criteria_json;
+  if (Array.isArray(criteria) && criteria.length > 0) {
+    return criteria.map((item, index) => {
+      const row = asRecord(item);
+      return `${index + 1}. ${clean(row?.criterion ?? item)}`;
+    }).filter((line) => line.replace(/^\d+\.\s*/, "").trim()).join("\n");
+  }
+  return clean(content.checklist_text);
+}
+
+async function reviewAssignmentSubmission(params: {
+  course: Rec;
+  module: Rec;
+  lesson: Rec;
+  content: Rec | null;
+  submissionText: string;
+}): Promise<AssignmentReview> {
+  const { course, module, lesson, content, submissionText } = params;
+  const lessonMaterial = content ? [
+    `Теория:\n${clean(content.theory_text)}`,
+    `Примеры:\n${clean(content.examples_text)}`,
+    `Практика:\n${clean(content.practice_text)}`,
+    `Чек-лист:\n${clean(content.checklist_text)}`,
+  ].filter((part) => part.replace(/^[^:]+:\n/, "").trim()).join("\n\n") : "Содержание урока не найдено.";
+
+  const expectedAnswer = content ? clean(content.expected_answer_text) : "";
+  const criteriaText = content ? criteriaTextFromContent(content) : "";
+
+  const systemPrompt = [
+    "Ты — методист и проверяющий практических заданий.",
+    "Оцени ответ студента строго по материалам урока, цели урока, эталонному ответу и критериям.",
+    "Верни строго валидный JSON без markdown и пояснений вокруг JSON.",
+    "Не придумывай требования, которых нет в задании. Если данных недостаточно, добавь warnings.",
+    `Язык ответа: ${clean(course.language) || "ru"}.`,
+    `Тон: ${clean(course.tone) || "neutral"}.`,
+  ].join("\n");
+
+  const userPrompt = [
+    "Данные курса:",
+    `Название: ${clean(course.title)}`,
+    `Тема: ${clean(course.topic)}`,
+    `Уровень: ${clean(course.level)}`,
+    `Цель курса: ${clean(course.goal) || "не указана"}`,
+    `Формат: ${clean(course.format) || "смешанный"}`,
+    "",
+    "Данные урока:",
+    `Модуль: ${clean(module.title)}`,
+    `Урок: ${clean(lesson.title)}`,
+    `Цель урока: ${clean(lesson.objective)}`,
+    `Ожидаемый результат: ${clean(lesson.learning_outcome)}`,
+    "",
+    "Материал урока и задание:",
+    lessonMaterial.slice(0, 18000),
+    "",
+    "Скрытый эталонный ответ:",
+    expectedAnswer || "Не задан. Оцени по практическому заданию, цели урока и чек-листу.",
+    "",
+    "Критерии проверки:",
+    criteriaText || "Не заданы. Сформируй проверку по цели урока и практическому заданию.",
+    "",
+    "Ответ студента:",
+    submissionText.slice(0, 12000),
+    "",
+    "Верни JSON формата:",
+    safeJson({
+      score: 0,
+      status: "passed или needs_revision",
+      feedback: "краткая понятная обратная связь",
+      strengths: ["что получилось"],
+      improvements: ["что исправить"],
+      criteria: [{ criterion: "string", passed: true, comment: "string" }],
+      suggested_answer: "пример корректного ответа после проверки",
+      warnings: ["string"],
+    }),
+  ].join("\n");
+
+  return validateAssignmentReviewResponse(await callAi(systemPrompt, userPrompt));
+}
+
 async function buildSnapshot(db: SupabaseClient, courseId: string): Promise<Rec> {
   const { data: course } = await db.from("courses").select("*").eq("id", courseId).maybeSingle();
   const { data: modules } = await db.from("modules").select("*").eq("course_id", courseId).order("position", { ascending: true });
@@ -826,19 +958,54 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
   const submissionText = clean(body.submission_text ?? body.submissionText);
   if (!courseId || !lessonId) throw new AppError("INVALID_INPUT", "Нужно передать course_id и lesson_id", 400);
   if (!submissionText) throw new AppError("INVALID_INPUT", "Текст задания не может быть пустым", 400);
-  await verifyLessonAccess(db, courseId, lessonId, userId);
+
+  const course = await getOwnedCourse(db, courseId, userId);
+  const { lesson, module } = await getLessonContext(db, courseId, lessonId);
+
+  let content: Rec | null = null;
+  try {
+    content = await getLessonContent(db, lessonId);
+  } catch (error) {
+    if (!(error instanceof AppError) || error.code !== "LESSON_CONTENT_NOT_FOUND") throw error;
+  }
+
+  let review: AssignmentReview | null = null;
+  let review_warning: string | null = null;
+  try {
+    review = await reviewAssignmentSubmission({ course, module, lesson, content, submissionText });
+  } catch (error) {
+    review_warning = error instanceof Error ? error.message : String(error);
+    console.warn("assignment AI review failed", error);
+  }
+
   const { data: existingRows } = await db.from("assignment_submissions").select("id").eq("user_id", userId).eq("lesson_id", lessonId).order("created_at", { ascending: false }).limit(1);
   const existingId = clean(asRecord((existingRows ?? [])[0])?.id);
-  const payload = { user_id: userId, lesson_id: lessonId, submission_text: submissionText, status: "submitted", updated_at: new Date().toISOString() };
-  const result = existingId ? await db.from("assignment_submissions").update(payload).eq("id", existingId).select("*").maybeSingle() : await db.from("assignment_submissions").insert(payload).select("*").maybeSingle();
+  const basePayload: Rec = { user_id: userId, lesson_id: lessonId, submission_text: submissionText, status: review?.status ?? "submitted", updated_at: new Date().toISOString() };
+  const payload: Rec = {
+    ...basePayload,
+    review_score: review?.score ?? null,
+    review_status: review?.status ?? null,
+    review_feedback: review?.feedback ?? review_warning,
+    review_json: review ? { ...review, review_warning } : { review_warning },
+  };
+
+  const writeSubmission = (data: Rec) => existingId
+    ? db.from("assignment_submissions").update(data).eq("id", existingId).select("*").maybeSingle()
+    : db.from("assignment_submissions").insert(data).select("*").maybeSingle();
+
+  let result = await writeSubmission(payload);
+  if (result.error && /review_score|review_status|review_feedback|review_json|column/i.test(result.error.message)) {
+    console.warn("assignment_submissions review columns are missing, saving answer without persisted review", result.error.message);
+    result = await writeSubmission(basePayload);
+  }
   if (result.error) throw new AppError("DATABASE_ERROR", "Не удалось сохранить практическое задание", 500, { error: result.error.message });
+
   let progress: Rec | null = null;
   let progress_warning: string | null = null;
   try { progress = await recalculateProgressInternal(db, courseId, userId, lessonId); } catch (error) { progress_warning = error instanceof Error ? error.message : String(error); console.warn("progress recalc after assignment failed", error); }
-  await audit(db, { userId, courseId, action: "assignment_submitted", entityType: "lesson", entityId: lessonId, metadata: { lesson_id: lessonId, submission_id: clean(asRecord(result.data)?.id), progress_warning } });
-  return jsonResponse({ submission: result.data, progress, progress_warning });
+  await audit(db, { userId, courseId, action: "assignment_submitted", entityType: "lesson", entityId: lessonId, metadata: { lesson_id: lessonId, submission_id: clean(asRecord(result.data)?.id), review_score: review?.score ?? null, review_status: review?.status ?? null, review_warning, progress_warning } });
+  return jsonResponse({ submission: result.data, review, review_warning, progress, progress_warning });
 }
-
 export function serveLearnerAction(action: Action): void {
   Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
