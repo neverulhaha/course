@@ -37,7 +37,8 @@ Deno.serve(async (req) => {
       if (!version) throw new AppError("VERSION_NOT_FOUND", "Версия не найдена", 404);
     }
 
-    const requestedQaScope = typeof body?.qa_scope === "string" && body.qa_scope.trim() === "plan" ? "plan" : "course";
+    const rawQaScope = typeof body?.qa_scope === "string" ? body.qa_scope.trim().toLowerCase() : "";
+    const requestedQaScope = rawQaScope === "plan" || rawQaScope === "current" || rawQaScope === "course" ? rawQaScope : "course";
     const snapshot = await loadCourseSnapshot(supabaseAdmin, courseId);
     const qaContext = buildQaContext(snapshot, requestedQaScope);
     const qaScope = qaContext.mode;
