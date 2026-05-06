@@ -609,6 +609,27 @@ export async function createModule(
   return { data: inserted, error: null, warning };
 }
 
+async function extractFunctionErrorMessage(error: unknown): Promise<string> {
+  const e = error as { message?: string; context?: Response } | null;
+
+  if (e?.context instanceof Response) {
+    try {
+      const payload = await e.context.clone().json();
+      const backendError = asRecord(asRecord(payload)?.error);
+      const message = backendError?.message;
+      const code = backendError?.code;
+      if ((typeof message === "string" && message.trim()) || typeof code === "string") {
+        return toUserErrorMessage({ error: { code, message } }, "Не удалось создать урок. Попробуйте ещё раз.");
+      }
+    } catch {
+      // keep fallback below
+    }
+  }
+
+  if (typeof e?.message === "string" && e.message.trim()) return userError(e.message);
+  return "Не удалось создать урок. Попробуйте ещё раз.";
+}
+
 export async function createLesson(
   moduleId: string,
   userId: string,
@@ -619,33 +640,47 @@ export async function createLesson(
   const courseId = await getCourseIdByModule(moduleId);
   if (!courseId) return { data: null, error: "Модуль не найден." };
 
-  const { data: rows } = await supabase
+  const { data: rows, error: positionError } = await supabase
     .from("lessons")
     .select("position")
     .eq("module_id", moduleId)
     .order("position", { ascending: false })
     .limit(1);
 
+  if (positionError) return { data: null, error: userError(positionError.message) };
+
   const nextPosition = (num(asRecord((rows ?? [])[0])?.position) ?? 0) + 1;
+  const title = data.title?.trim() || "Новый урок";
+  const learningOutcome = data.learning_outcome?.trim() || "Результат обучения будет уточнен.";
 
-  const { data: inserted, error } = await supabase
-    .from("lessons")
-    .insert({
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) return { data: null, error: "Войдите в систему." };
+
+  const { data: functionResult, error } = await supabase.functions.invoke<{ lesson?: { id?: string } } | { error?: unknown }>("create-lesson", {
+    body: {
       module_id: moduleId,
-      title: data.title?.trim() || "Новый урок",
-      objective: data.objective ?? "",
-      summary: data.summary ?? "",
-      estimated_duration: data.estimated_duration ?? null,
-      learning_outcome: data.learning_outcome ?? "",
+      title,
       position: nextPosition,
-      content_status: "empty",
-    })
-    .select("id")
-    .maybeSingle();
+      estimated_duration: data.estimated_duration ?? 0,
+      learning_outcome: learningOutcome,
+      owner_id: userId,
+    },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 
-  if (error) return { data: null, error: userError(error.message) };
+  if (error) return { data: null, error: await extractFunctionErrorMessage(error) };
 
-  const lessonId = str(asRecord(inserted)?.id);
+  const backendError = asRecord(asRecord(functionResult)?.error);
+  if (backendError) {
+    const message = backendError.message;
+    const code = backendError.code;
+    return { data: null, error: toUserErrorMessage({ error: { code, message } }, "Не удалось создать урок. Попробуйте ещё раз.") };
+  }
+
+  const lessonId = str(asRecord(asRecord(functionResult)?.lesson)?.id);
+  if (!lessonId) return { data: null, error: "Урок создан, но сервер не вернул его ID." };
+
   const { warning } = await finalizeEditorMutation(
     courseId,
     userId,
@@ -657,7 +692,7 @@ export async function createLesson(
     { module_id: moduleId, lesson_id: lessonId, position: nextPosition }
   );
 
-  return { data: lessonId ? { id: lessonId } : null, error: null, warning };
+  return { data: { id: lessonId }, error: null, warning };
 }
 
 export async function deleteLesson(lessonId: string, userId: string): Promise<EditorActionResult> {

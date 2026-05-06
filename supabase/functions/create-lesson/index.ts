@@ -218,6 +218,8 @@ Deno.serve(async (req) => {
       .insert({
         module_id: payload.module_id,
         title: payload.title,
+        objective: "",
+        summary: "",
         position: payload.position,
         estimated_duration: payload.estimated_duration,
         learning_outcome: payload.learning_outcome,
