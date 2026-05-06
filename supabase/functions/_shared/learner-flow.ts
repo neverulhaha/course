@@ -997,7 +997,8 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
 
   const { data: existingRows } = await db.from("assignment_submissions").select("id").eq("user_id", userId).eq("lesson_id", lessonId).order("created_at", { ascending: false }).limit(1);
   const existingId = clean(asRecord((existingRows ?? [])[0])?.id);
-  const basePayload: Rec = { user_id: userId, lesson_id: lessonId, submission_text: submissionText, status: review?.status ?? "submitted", updated_at: new Date().toISOString() };
+  const submissionStatus = review?.status === "passed" ? "accepted" : review?.status === "needs_revision" ? "reviewed" : "submitted";
+  const basePayload: Rec = { user_id: userId, lesson_id: lessonId, submission_text: submissionText, status: submissionStatus, updated_at: new Date().toISOString() };
   const payload: Rec = {
     ...basePayload,
     review_score: review?.score ?? null,
