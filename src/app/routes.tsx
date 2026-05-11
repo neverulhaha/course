@@ -14,6 +14,7 @@ const CreateCourse    = lazy(() => import("./pages/CreateCourse"));
 const CreateFromSource= lazy(() => import("./pages/CreateFromSource"));
 const PlanResult      = lazy(() => import("./pages/PlanResult"));
 const CourseEditor    = lazy(() => import("./pages/CourseEditor"));
+const CourseLearners  = lazy(() => import("./pages/CourseLearners"));
 const QAReport          = lazy(() => import("./pages/QAReport"));
 const VersionHistory    = lazy(() => import("./pages/VersionHistory"));
 const ProgressDashboard = lazy(() => import("./pages/ProgressDashboard"));
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
       { path: "source/create", element: <Navigate to="/app/create-source" replace /> },
       { path: "plan/:courseId", element: <Lazy><PlanResult /></Lazy> },
       { path: "editor/:courseId", element: <Lazy><CourseEditor /></Lazy> },
+      { path: "learners/:courseId", element: <Lazy><CourseLearners /></Lazy> },
       { path: "qa/:courseId", element: <Lazy><QAReport /></Lazy> },
       { path: "versions/:courseId", element: <Lazy><VersionHistory /></Lazy> },
       { path: "progress", element: <Lazy><ProgressDashboard /></Lazy> },

@@ -1,5 +1,5 @@
 import type { CourseStatus } from "@/entities/course/courseStatus";
-import type { GenerationDepth } from "@/entities/course/types";
+import type { CourseAudienceType, GenerationDepth } from "@/entities/course/types";
 
 export interface ProfileRow {
   id: string;
@@ -28,6 +28,7 @@ export interface CourseRow {
   tone: string | null;
   status: CourseStatus;
   generation_depth: GenerationDepth;
+  course_type?: CourseAudienceType | string | null;
   current_version_id?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -136,6 +137,17 @@ export interface ProgressRow {
 }
 
 
+export interface CourseEnrollmentRow {
+  id: string;
+  course_id: string;
+  user_id: string;
+  role: "owner" | "learner" | string;
+  status: "active" | "invited" | "removed" | string;
+  invited_by: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface QaReportRow {
   id: string;
   course_id: string;
@@ -169,6 +181,7 @@ export interface CourseListRow {
   topic: string | null;
   status: CourseStatus | "error" | "failed" | string;
   current_version_id?: string | null;
+  course_type?: CourseAudienceType | string | null;
   created_at?: string;
   updated_at?: string;
 }

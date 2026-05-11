@@ -9,6 +9,30 @@
  * Read-модели для экранов (дашборд, версии, QA, прогресс) — `./readModels`, не дублировать.
  */
 
+
+export type CourseAudienceType = "self_study" | "for_students";
+
+export const COURSE_AUDIENCE_OPTIONS: ReadonlyArray<{
+  value: CourseAudienceType;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "self_study",
+    label: "Для себя",
+    description: "Автор сможет редактировать курс и проходить его как обучающийся.",
+  },
+  {
+    value: "for_students",
+    label: "Для обучающихся",
+    description: "Автор редактирует курс и добавляет обучающихся для прохождения.",
+  },
+];
+
+export function courseAudienceLabel(value: unknown): string {
+  return COURSE_AUDIENCE_OPTIONS.find((option) => option.value === value)?.label ?? "Для себя";
+}
+
 /** Соответствует `public.courses.generation_depth` в Supabase. */
 export type GenerationDepth = "plan";
 

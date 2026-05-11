@@ -20,6 +20,8 @@ import {
   Search,
   SortDesc,
   Trash2,
+  UserCheck,
+  Users,
   X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -248,28 +250,38 @@ function DeleteConfirmModal({
 
 function CourseActions({ course, onDelete }: { course: MyCourseListItem; onDelete: (course: MyCourseListItem) => void }) {
   const continueHref = getContinueHref(course);
+  const isOwner = course.accessRole === "owner";
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap" onClick={(event) => event.stopPropagation()}>
       <Link to={continueHref} className="vs-btn vs-btn-primary min-h-10 flex-1 justify-center sm:flex-none" title="Открыть последний или следующий урок">
         <Play className="h-4 w-4" />
         Продолжить
       </Link>
-      <Link to={`/app/editor/${course.id}`} className="vs-btn vs-btn-secondary min-h-10 flex-1 justify-center sm:flex-none">
-        <Edit3 className="h-4 w-4" />
-        Редактировать
-      </Link>
-      <Link to={`/learn/${course.id}`} className="vs-btn-ghost min-h-10 flex-1 justify-center sm:flex-none">
-        <BookOpen className="h-4 w-4" />
-        Проходить
-      </Link>
-      <Link to={`/app/versions/${course.id}`} className="vs-btn-ghost min-h-10 flex-1 justify-center sm:flex-none">
-        <History className="h-4 w-4" />
-        Версии
-      </Link>
-      <button type="button" onClick={() => onDelete(course)} className="vs-btn-ghost min-h-10 flex-1 justify-center text-red-600 hover:bg-red-50 sm:flex-none">
-        <Trash2 className="h-4 w-4" />
-        Удалить
-      </button>
+      {isOwner ? (
+        <>
+          <Link to={`/app/editor/${course.id}`} className="vs-btn vs-btn-secondary min-h-10 flex-1 justify-center sm:flex-none">
+            <Edit3 className="h-4 w-4" />
+            Редактировать
+          </Link>
+          <Link to={`/app/learners/${course.id}`} className="vs-btn-ghost min-h-10 flex-1 justify-center sm:flex-none">
+            <Users className="h-4 w-4" />
+            Ученики
+          </Link>
+          <Link to={`/app/versions/${course.id}`} className="vs-btn-ghost min-h-10 flex-1 justify-center sm:flex-none">
+            <History className="h-4 w-4" />
+            Версии
+          </Link>
+          <button type="button" onClick={() => onDelete(course)} className="vs-btn-ghost min-h-10 flex-1 justify-center text-red-600 hover:bg-red-50 sm:flex-none">
+            <Trash2 className="h-4 w-4" />
+            Удалить
+          </button>
+        </>
+      ) : (
+        <Link to={`/learn/${course.id}`} className="vs-btn-ghost min-h-10 flex-1 justify-center sm:flex-none">
+          <BookOpen className="h-4 w-4" />
+          Проходить
+        </Link>
+      )}
     </div>
   );
 }
@@ -286,10 +298,16 @@ function CourseCard({ course, onDelete }: { course: MyCourseListItem; onDelete: 
   return (
     <article
       className="group flex min-w-0 cursor-pointer flex-col rounded-3xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-5 transition hover:border-[var(--border-md)] hover:shadow-sm"
-      onClick={() => navigate(`/app/editor/${course.id}`)}
+      onClick={() => navigate(course.accessRole === "owner" ? `/app/editor/${course.id}` : `/learn/${course.id}`)}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
-        <StatusPill status={course.status} />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill status={course.status} />
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--gray-100)] px-2.5 py-1 text-[11px] font-bold text-[var(--gray-600)]">
+            {course.accessRole === "owner" ? <UserCheck className="h-3 w-3" /> : <GraduationCap className="h-3 w-3" />}
+            {course.accessRole === "owner" ? "Автор" : "Обучающийся"}
+          </span>
+        </div>
         <span className={cn("text-xs font-extrabold tabular-nums", scoreTone(course.qaScore))}>
           QA {course.qaScore ?? "—"}
         </span>
@@ -348,7 +366,7 @@ function CourseRow({ course, onDelete }: { course: MyCourseListItem; onDelete: (
   return (
     <article
       className="group flex cursor-pointer flex-col gap-4 rounded-3xl border border-[var(--border-xs)] bg-[var(--bg-surface)] p-4 transition hover:border-[var(--border-md)] hover:bg-[var(--gray-100)] sm:flex-row sm:items-center"
-      onClick={() => navigate(`/app/editor/${course.id}`)}
+      onClick={() => navigate(course.accessRole === "owner" ? `/app/editor/${course.id}` : `/learn/${course.id}`)}
     >
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[rgba(74,144,226,0.08)] text-[var(--brand-blue)]">
         <BookOpen className="h-5 w-5" />
@@ -358,6 +376,10 @@ function CourseRow({ course, onDelete }: { course: MyCourseListItem; onDelete: (
           <StatusPill status={course.status} />
           <span className="rounded-full bg-[var(--gray-150)] px-2.5 py-1 text-[11px] font-bold text-[var(--gray-500)]">
             {course.moduleCount} мод. · {course.lessonCount} ур.
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--gray-150)] px-2.5 py-1 text-[11px] font-bold text-[var(--gray-500)]">
+            {course.accessRole === "owner" ? <UserCheck className="h-3 w-3" /> : <GraduationCap className="h-3 w-3" />}
+            {course.accessRole === "owner" ? "Автор" : "Обучающийся"}
           </span>
         </div>
         <h3 className="truncate text-base font-extrabold text-[var(--gray-900)] group-hover:text-[var(--brand-blue)]">{course.title}</h3>
@@ -451,6 +473,11 @@ export default function MyCourses() {
   const handleConfirmDelete = async () => {
     if (!courseToDelete) return;
     setDeleting(true);
+    if (courseToDelete.accessRole !== "owner") {
+      setDeleting(false);
+      toast.error("Удалять курс может только автор.");
+      return;
+    }
     const result = await deleteCourse(courseToDelete.id);
     setDeleting(false);
     if (result.error) {
@@ -481,7 +508,7 @@ export default function MyCourses() {
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--brand-blue)]">Рабочая область</p>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-[var(--gray-900)]">Мои курсы</h1>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-[var(--gray-500)]">
-              Управляйте курсами, продолжайте обучение, открывайте редактор, версии и прогресс из одного места.
+              Управляйте своими курсами, проходите личные и назначенные курсы, открывайте редактор и прогресс из одного места.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">

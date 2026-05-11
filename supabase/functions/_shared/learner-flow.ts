@@ -192,6 +192,33 @@ async function getOwnedCourse(db: SupabaseClient, courseId: string, userId: stri
   if (clean(course.author_id) !== userId) throw new AppError("FORBIDDEN", "Нет доступа к курсу", 403);
   return course;
 }
+
+async function getCourseForLearning(db: SupabaseClient, courseId: string, userId: string): Promise<Rec> {
+  const { data, error } = await db.from("courses").select("*").eq("id", courseId).maybeSingle();
+  if (error) throw new AppError("DATABASE_ERROR", "Не удалось загрузить курс", 500, { error: error.message });
+  const course = asRecord(data);
+  if (!course) throw new AppError("COURSE_NOT_FOUND", "Курс не найден", 404);
+  if (clean(course.author_id) === userId) return course;
+
+  const { data: enrollment, error: enrollmentError } = await db
+    .from("course_enrollments")
+    .select("id, role, status")
+    .eq("course_id", courseId)
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (enrollmentError) {
+    // Backward compatibility for databases that have not received the enrollment migration yet.
+    if (/course_enrollments|relation/i.test(enrollmentError.message ?? "")) {
+      throw new AppError("FORBIDDEN", "Нет доступа к курсу", 403);
+    }
+    throw new AppError("DATABASE_ERROR", "Не удалось проверить доступ к курсу", 500, { error: enrollmentError.message });
+  }
+
+  if (!enrollment) throw new AppError("FORBIDDEN", "Нет доступа к курсу", 403);
+  return course;
+}
 async function getCourseForQuiz(db: SupabaseClient, quizId: string): Promise<{ quiz: Rec; course: Rec; lessonId: string | null }> {
   const { data: quizData, error: quizError } = await db.from("quizzes").select("*").eq("id", quizId).maybeSingle();
   if (quizError) throw new AppError("DATABASE_ERROR", "Не удалось загрузить квиз", 500, { error: quizError.message });
@@ -870,7 +897,7 @@ async function getQuizForTaking(req: Request, db: SupabaseClient, userId: string
 
   const { quiz, questions, optionsByQuestion } = await loadQuizWithQuestions(db, quizId);
   const courseId = await resolveCourseIdForQuiz(db, quiz);
-  await getOwnedCourse(db, courseId, userId);
+  await getCourseForLearning(db, courseId, userId);
 
   const safeQuestions = questions.map((q, index) => {
     const qid = clean(q.id);
@@ -936,7 +963,7 @@ async function submitQuizAttempt(req: Request, db: SupabaseClient, userId: strin
   if (!quizId || answersRaw.length === 0) throw new AppError("INVALID_ANSWERS", "Нужно передать ответы на вопросы", 400);
   const { quiz, questions, optionsByQuestion } = await loadQuizWithQuestions(db, quizId);
   const courseId = await resolveCourseIdForQuiz(db, quiz);
-  const course = await getOwnedCourse(db, courseId, userId);
+  const course = await getCourseForLearning(db, courseId, userId);
   const quizQuestionIds = new Set(questions.map((q) => clean(q.id)).filter(Boolean));
   const answerMap = new Map<string, string[]>();
   for (const item of answersRaw) {
@@ -1012,12 +1039,12 @@ async function courseLessonIds(db: SupabaseClient, courseId: string): Promise<st
   return result;
 }
 async function verifyLessonAccess(db: SupabaseClient, courseId: string, lessonId: string, userId: string): Promise<Rec> {
-  await getOwnedCourse(db, courseId, userId);
+  await getCourseForLearning(db, courseId, userId);
   const { lesson } = await getLessonContext(db, courseId, lessonId);
   return lesson;
 }
 async function recalculateProgressInternal(db: SupabaseClient, courseId: string, userId: string, lastOpenedLessonId?: string | null): Promise<Rec> {
-  await getOwnedCourse(db, courseId, userId);
+  await getCourseForLearning(db, courseId, userId);
   const lessonIds = await courseLessonIds(db, courseId);
   const total = lessonIds.length;
   const { data: completions, error: cErr } = lessonIds.length ? await db.from("lesson_completions").select("lesson_id, completed_at").eq("user_id", userId).in("lesson_id", lessonIds) : { data: [], error: null };
@@ -1128,7 +1155,7 @@ async function submitAssignment(req: Request, db: SupabaseClient, userId: string
   if (isFirstAttempt) {
     checkedBy = "ai_first_attempt";
     try {
-      const course = await getOwnedCourse(db, courseId, userId);
+      const course = await getCourseForLearning(db, courseId, userId);
       const { module } = await getLessonContext(db, courseId, lessonId);
       review = await reviewAssignmentSubmission({ course, module, lesson, content, submissionText });
     } catch (error) {

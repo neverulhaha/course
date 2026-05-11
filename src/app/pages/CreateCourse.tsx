@@ -13,6 +13,7 @@ import {
   type CreateCourseFormValues,
   type CreateCourseGenerationMode,
 } from "@/entities/course/createCourseDraft";
+import { COURSE_AUDIENCE_OPTIONS, courseAudienceLabel } from "@/entities/course/types";
 import {
   Sparkles,
   FileText,
@@ -23,6 +24,8 @@ import {
   Layers,
   BookOpen,
   ChevronLeft,
+  UserCheck,
+  Users,
 } from "lucide-react";
 
 /* ─── Types ───────────────────────────────────────────────── */
@@ -490,6 +493,35 @@ function StepOptions({ data, update }: { data: FormData; update: (p: Partial<For
         </div>
 
         <div>
+          <FieldLabel label="Для кого курс" hint="Автор всегда может редактировать курс и проходить его сам" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {COURSE_AUDIENCE_OPTIONS.map((option) => {
+              const active = data.courseType === option.value;
+              const Icon = option.value === "self_study" ? UserCheck : Users;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => update({ courseType: option.value })}
+                  className="rounded-2xl border p-4 text-left transition"
+                  style={{
+                    borderColor: active ? "var(--brand-blue)" : "var(--border-md)",
+                    background: active ? "rgba(74,144,226,0.06)" : "var(--gray-50)",
+                    boxShadow: active ? "0 0 0 3px rgba(74,144,226,0.08)" : "none",
+                  }}
+                >
+                  <div className="mb-2 flex items-center gap-2 text-sm font-extrabold" style={{ color: active ? "var(--brand-blue)" : "var(--gray-900)" }}>
+                    <Icon className="size-4" />
+                    {option.label}
+                  </div>
+                  <p className="text-xs font-medium leading-relaxed text-[var(--gray-500)]">{option.description}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
           <FieldLabel label="Формат материала" hint="Как будет подаваться информация в будущих уроках" />
           <SegmentedPicker
             options={FORMATS}
@@ -508,6 +540,7 @@ function StepReview({ data }: { data: FormData }) {
     { icon: Layers,   label: "Уровень",      value: data.level             },
     { icon: Clock,    label: "Длительность", value: data.duration          },
     { icon: Sparkles, label: "Формат",       value: data.format            },
+    { icon: Users,    label: "Доступ",       value: courseAudienceLabel(data.courseType) },
     ...(data.type === "source" ? [{ icon: FileText, label: "Источник", value: `${data.sourceContent.length} симв.` }] : []),
   ];
 
@@ -559,7 +592,7 @@ function StepReview({ data }: { data: FormData }) {
           className="text-[length:var(--text-xs)] leading-[var(--leading-relaxed)] text-[var(--gray-600)]"
           style={{ fontFamily: FONT }}
         >
-          Сначала будет создан план курса: модули, уроки, цели, краткие описания, ожидаемые результаты и тайминг. Содержимое уроков и квизы не создаются автоматически. Откройте урок и нажмите «Сгенерировать урок». Если выбран режим по источнику, план будет основан на введённом тексте.
+          Сначала будет создан план курса: модули, уроки, цели, краткие описания, ожидаемые результаты и тайминг. Автор сможет переключаться между редактированием и прохождением. Если курс создан для обучающихся, добавьте их из редактора после генерации плана.
         </p>
       </div>
     </>

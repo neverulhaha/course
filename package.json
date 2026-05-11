@@ -10,7 +10,7 @@
     "deploy:functions": "npx supabase functions deploy --project-ref aabrasccxeawzlqxwkjt",
     "deploy:restore-version": "npx supabase functions deploy restore-course-version --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt",
     "db:push": "npx supabase db push",
-    "deploy:security-functions": "sh -c 'for fn in create-lesson delete-course run-course-qa complete-lesson submit-assignment submit-quiz-attempt get-quiz-for-taking recalculate-progress generate-course generate-course-plan generate-course-content generate-lesson-content regenerate-lesson-block generate-lesson-quiz generate-course-quiz start-generation-session process-generation-step get-generation-session-status cancel-generation-session; do npx supabase functions deploy \"$fn\" --project-ref aabrasccxeawzlqxwkjt || exit 1; done; npx supabase functions deploy restore-course-version --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt'",
+    "deploy:security-functions": "sh -c 'for fn in create-lesson delete-course run-course-qa complete-lesson submit-assignment submit-quiz-attempt get-quiz-for-taking recalculate-progress generate-course generate-course-plan generate-course-content generate-lesson-content regenerate-lesson-block generate-lesson-quiz generate-course-quiz start-generation-session process-generation-step get-generation-session-status cancel-generation-session add-course-learner list-course-learners remove-course-learner; do npx supabase functions deploy \"$fn\" --project-ref aabrasccxeawzlqxwkjt || exit 1; done; npx supabase functions deploy restore-course-version --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt'",
     "deploy:create-lesson": "npx supabase functions deploy create-lesson --project-ref aabrasccxeawzlqxwkjt --no-verify-jwt"
   },
   "dependencies": {

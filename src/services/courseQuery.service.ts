@@ -37,6 +37,8 @@ export type MyCourseListItem = {
   nextRecommendedLessonTitle: string | null;
   qaScore: number | null;
   currentVersionId: string | null;
+  accessRole: "owner" | "learner";
+  courseType: string | null;
 };
 
 export type MyCoursesQueryResult = {
@@ -53,6 +55,8 @@ type CourseRowLite = {
   updated_at: string | null;
   status: string | null;
   current_version_id: string | null;
+  course_type?: string | null;
+  accessRole?: "owner" | "learner";
 };
 
 type ModuleRowLite = {
@@ -125,15 +129,51 @@ export async function fetchCourseContentMetrics(courseId: string): Promise<Cours
 }
 
 export async function listMyCourses(authorId: string): Promise<MyCoursesQueryResult> {
-  const { data: courseRows, error: coursesError } = await supabase
+  const { data: ownedRows, error: coursesError } = await supabase
     .from("courses")
-    .select("id, title, topic, author_id, created_at, updated_at, status, current_version_id")
+    .select("id, title, topic, author_id, created_at, updated_at, status, current_version_id, course_type")
     .eq("author_id", authorId)
     .order("updated_at", { ascending: false });
 
   if (coursesError) return { courses: [], error: safeError(coursesError, "Не удалось загрузить курсы") };
 
-  const courses = (courseRows ?? []) as CourseRowLite[];
+  const courseById = new Map<string, CourseRowLite>();
+  for (const course of (ownedRows ?? []) as CourseRowLite[]) {
+    if (course.id) courseById.set(course.id, { ...course, accessRole: "owner" });
+  }
+
+  const { data: enrollmentRows, error: enrollmentsError } = await supabase
+    .from("course_enrollments")
+    .select("course_id, role, status")
+    .eq("user_id", authorId)
+    .eq("status", "active");
+
+  if (enrollmentsError && !/course_enrollments|relation/i.test(enrollmentsError.message ?? "")) {
+    return { courses: [], error: safeError(enrollmentsError, "Не удалось загрузить доступные курсы") };
+  }
+
+  const enrollmentRoleByCourse = new Map<string, "owner" | "learner">();
+  for (const row of enrollmentRows ?? []) {
+    const rec = asRecord(row);
+    const courseId = str(rec?.course_id);
+    const role = str(rec?.role) === "owner" ? "owner" : "learner";
+    if (courseId) enrollmentRoleByCourse.set(courseId, role);
+  }
+
+  const enrolledCourseIds = [...enrollmentRoleByCourse.keys()].filter((id) => !courseById.has(id));
+  if (enrolledCourseIds.length > 0) {
+    const { data: enrolledCourses, error: enrolledCoursesError } = await supabase
+      .from("courses")
+      .select("id, title, topic, author_id, created_at, updated_at, status, current_version_id, course_type")
+      .in("id", enrolledCourseIds);
+    if (enrolledCoursesError) return { courses: [], error: safeError(enrolledCoursesError, "Не удалось загрузить назначенные курсы") };
+    for (const course of (enrolledCourses ?? []) as CourseRowLite[]) {
+      if (!course.id) continue;
+      courseById.set(course.id, { ...course, accessRole: enrollmentRoleByCourse.get(course.id) ?? "learner" });
+    }
+  }
+
+  const courses = [...courseById.values()];
   if (courses.length === 0) return { courses: [], error: null };
 
   const courseIds = courses.map((course) => course.id).filter(Boolean);
@@ -275,6 +315,8 @@ export async function listMyCourses(authorId: string): Promise<MyCoursesQueryRes
       nextRecommendedLessonTitle: resolvedNextLessonId ? lessonById.get(resolvedNextLessonId)?.title?.trim() || "Урок" : null,
       qaScore: latestQaByCourse.get(course.id) ?? null,
       currentVersionId: course.current_version_id ?? null,
+      accessRole: course.accessRole ?? (course.author_id === authorId ? "owner" : "learner"),
+      courseType: course.course_type ?? null,
     };
   });
 

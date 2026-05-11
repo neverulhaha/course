@@ -8,7 +8,7 @@
  *
  * Контракт `public.create_course_draft(...)` (Supabase RPC): автор через `auth.uid()`, клиент шлёт только `p_*`.
  */
-import type { GenerationDepth } from "./types";
+import type { CourseAudienceType, GenerationDepth } from "./types";
 
 export type CreateCourseGenerationMode = "scratch" | "source";
 
@@ -27,6 +27,7 @@ export interface CreateCourseFormValues {
   sourceContent: string;
   sourceUrl: string;
   useOnlySource: boolean;
+  courseType: CourseAudienceType;
 }
 
 export const CREATE_COURSE_FORM_DEFAULT: CreateCourseFormValues = {
@@ -41,6 +42,7 @@ export const CREATE_COURSE_FORM_DEFAULT: CreateCourseFormValues = {
   sourceContent: "",
   sourceUrl: "",
   useOnlySource: true,
+  courseType: "self_study",
 };
 
 export const DEFAULT_COURSE_LANGUAGE = "ru";
@@ -69,6 +71,7 @@ export interface CreateCourseDraftInput {
   source_url: string | null;
   file_ref: string | null;
   only_source_mode: boolean;
+  course_type: CourseAudienceType;
 }
 
 /**
@@ -91,6 +94,7 @@ export type CreateCourseDraftRpcPayload = {
   p_source_url: string | null;
   p_file_ref: string | null;
   p_only_source_mode: boolean;
+  p_course_type: CourseAudienceType;
 };
 
 function parseDurationToNumber(value: string): number | null {
@@ -129,6 +133,7 @@ export function mapCreateCourseFormToDraftInput(form: CreateCourseFormValues): C
     source_url: isSource && form.sourceType === "link" ? (form.sourceUrl.trim() || null) : null,
     file_ref: null,
     only_source_mode: Boolean(isSource && form.useOnlySource),
+    course_type: form.courseType,
   };
 }
 
@@ -151,6 +156,7 @@ export function mapCreateCourseDraftInputToRpcPayload(input: CreateCourseDraftIn
     p_source_url: input.source_url ?? null,
     p_file_ref: input.file_ref ?? null,
     p_only_source_mode: input.only_source_mode ?? false,
+    p_course_type: input.course_type ?? "self_study",
   };
 }
 

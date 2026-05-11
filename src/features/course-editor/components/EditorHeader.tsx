@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ArrowLeft, Save, Eye, Shield, History as HistoryIcon, CheckCircle2, Sparkles, Edit2 } from "lucide-react";
+import { ArrowLeft, Save, Eye, Shield, History as HistoryIcon, CheckCircle2, Sparkles, Edit2, Users } from "lucide-react";
 import type { CourseEditorMeta } from "@/entities/course/types";
 
 const FONT = "'Montserrat', sans-serif";
@@ -87,6 +87,7 @@ export function EditorHeader({ courseId, course, showSaveIndicator, onSave, onPr
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
         {[
           { to: `/app/qa/${courseId}`,       icon: Shield,       label: "Качество" },
+          { to: `/app/learners/${courseId}`, icon: Users,        label: "Ученики"  },
           { to: `/app/versions/${courseId}`, icon: HistoryIcon,  label: "Версии"  },
         ].map(({ to, icon: Icon, label }) => (
           <Link
