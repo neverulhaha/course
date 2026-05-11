@@ -1,11 +1,21 @@
+import { useState } from "react";
 import { Link } from "react-router";
-import { Monitor, Moon } from "lucide-react";
+import { BookOpen, Monitor, Moon } from "lucide-react";
+import { toast } from "sonner";
 import { useTheme } from "@/app/providers/ThemeProvider";
-import { SettingsForm, SettingsLayout, SettingsSection } from "@/app/components/settings";
+import { SettingsForm, SettingsLayout, SettingsSection, ToggleSwitch } from "@/app/components/settings";
+import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/providers/ProfileProvider";
+import { normalizeProfileRole, profileRoleLabel, isTeacherRole } from "@/lib/profileRole";
+import { updateProfilePreferences } from "@/services/profile.service";
+import { toUserErrorMessage } from "@/lib/errorMessages";
 
 const FONT = "'Montserrat', sans-serif";
 
-const NAV = [{ href: "#settings-general", label: "Оформление" }];
+const NAV = [
+  { href: "#settings-general", label: "Оформление" },
+  { href: "#settings-learning", label: "Режимы" },
+];
 
 function ThemeSegmented() {
   const { theme, setTheme } = useTheme();
@@ -59,6 +69,66 @@ function ThemeSegmented() {
   );
 }
 
+function LearningNavigationSection() {
+  const { user } = useAuth();
+  const { profile, refresh } = useProfile();
+  const role = normalizeProfileRole(profile?.app_role);
+  const isTeacher = isTeacherRole(role);
+  const [saving, setSaving] = useState(false);
+
+  const hidden = Boolean(profile?.hide_learning_navigation);
+
+  const handleToggle = async (value: boolean) => {
+    if (!user?.id || !isTeacher) return;
+    setSaving(true);
+    const { error } = await updateProfilePreferences(user.id, { hide_learning_navigation: value });
+    setSaving(false);
+    if (error) {
+      toast.error(toUserErrorMessage(error, "Не удалось сохранить настройку."));
+      return;
+    }
+    await refresh();
+    toast.success(value ? "Разделы прохождения скрыты из меню" : "Разделы прохождения снова видны в меню");
+  };
+
+  return (
+    <SettingsSection
+      id="settings-learning"
+      title="Режимы работы"
+      subtitle="Настройте, какие сценарии показывать в интерфейсе."
+    >
+      <SettingsForm>
+        <div className="flex min-w-0 items-start justify-between gap-4 rounded-2xl border border-[var(--border-xs)] bg-[var(--gray-50)] p-4">
+          <div className="flex min-w-0 gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[rgba(74,144,226,0.08)] text-[var(--brand-blue)]">
+              <BookOpen className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-[var(--gray-900)]" style={{ fontFamily: FONT }}>
+                Скрыть прохождение курсов в левом меню
+              </p>
+              <p className="mt-1 text-xs font-medium leading-relaxed text-[var(--gray-500)]" style={{ fontFamily: FONT }}>
+                Доступно только для роли «Преподаватель». Если включить, пункты «Прогресс» и «Учиться» не будут отображаться в боковом меню.
+              </p>
+              {!isTeacher && (
+                <p className="mt-2 text-[11px] font-semibold text-[var(--gray-400)]" style={{ fontFamily: FONT }}>
+                  Текущая роль: {profileRoleLabel(role)}. Для автора курсов прохождение всегда доступно без ограничений.
+                </p>
+              )}
+            </div>
+          </div>
+          <ToggleSwitch
+            pressed={hidden && isTeacher}
+            onPressedChange={(value) => void handleToggle(value)}
+            aria-label="Скрыть прохождение курсов в меню"
+            disabled={!isTeacher || saving}
+          />
+        </div>
+      </SettingsForm>
+    </SettingsSection>
+  );
+}
+
 export default function Settings() {
   return (
     <SettingsLayout title="Настройки" subtitle="Оформление интерфейса и параметры аккаунта." navItems={NAV}>
@@ -68,11 +138,13 @@ export default function Settings() {
         </SettingsForm>
       </SettingsSection>
 
+      <LearningNavigationSection />
+
       <p
         className="border-t border-[var(--border-xs)] pt-5 text-center text-[11px] leading-relaxed sm:text-left"
         style={{ fontFamily: FONT, color: "var(--gray-400)" }}
       >
-        Имя, email и выход из аккаунта —{" "}
+        Имя, email и роль —{" "}
         <Link to="/app/profile" className="font-semibold text-[var(--brand-blue)] underline-offset-2 hover:underline">
           в личном кабинете
         </Link>

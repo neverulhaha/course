@@ -9,6 +9,7 @@ export interface ProfileRow {
   display_name?: string | null;
   provider?: "email" | "google" | "unknown" | string | null;
   app_role?: "student" | "teacher" | "author" | "learner" | "admin" | string | null;
+  hide_learning_navigation?: boolean | null;
   created_at?: string;
   updated_at?: string;
 }

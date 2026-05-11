@@ -9,6 +9,10 @@ export interface ProfilePatch {
   provider?: AuthProvider;
 }
 
+export interface ProfilePreferencesPatch {
+  hide_learning_navigation?: boolean;
+}
+
 export interface UpsertProfilePayload {
   id: string;
   full_name?: string | null;
@@ -17,6 +21,7 @@ export interface UpsertProfilePayload {
   email?: string | null;
   provider?: AuthProvider | null;
   app_role?: string | null;
+  hide_learning_navigation?: boolean | null;
 }
 
 function normalizeEmail(email: string | null | undefined) {
@@ -51,6 +56,9 @@ function buildProfilePayload(payload: UpsertProfilePayload) {
     display_name: displayName,
     provider: payload.provider ?? null,
     app_role: payload.app_role ?? "student",
+    ...(typeof payload.hide_learning_navigation === "boolean"
+      ? { hide_learning_navigation: payload.hide_learning_navigation }
+      : {}),
     updated_at: new Date().toISOString(),
   };
 }
@@ -110,6 +118,18 @@ export async function upsertProfileForUser(user: User, patch: ProfilePatch = {})
     return null;
   }
   return data;
+}
+
+export async function updateProfilePreferences(id: string, patch: ProfilePreferencesPatch) {
+  return supabase
+    .from("profiles")
+    .update({
+      ...patch,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
 }
 
 export async function getCurrentProfile() {

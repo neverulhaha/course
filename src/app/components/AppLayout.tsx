@@ -16,6 +16,7 @@ import { BrandWordmark } from "./Brand";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/providers/ProfileProvider";
 import { displayName, userInitials } from "@/lib/userDisplay";
+import { canCreateCourses, normalizeProfileRole, shouldHideLearningNavigation } from "@/lib/profileRole";
 import { OAUTH_SUCCESS_BANNER_KEY } from "@/services/auth.service";
 import { listRecentCourses } from "@/services/courseQuery.service";
 
@@ -32,7 +33,8 @@ function getActive(path: string): string {
     path.startsWith("/app/editor") ||
     path.startsWith("/app/plan") ||
     path.startsWith("/app/qa") ||
-    path.startsWith("/app/versions")
+    path.startsWith("/app/versions") ||
+    path.startsWith("/app/learners")
   ) return "courses";
   if (path.startsWith("/app/create")) return "create";
   if (path.startsWith("/app/progress")) return "progress";
@@ -230,10 +232,14 @@ function Sidebar({
   onClose,
   recentCourses,
   learnHref,
+  canCreate,
+  showLearningNav,
 }: {
   onClose?: () => void;
   recentCourses: { id: string; title: string }[];
   learnHref: string;
+  canCreate: boolean;
+  showLearningNav: boolean;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -302,24 +308,26 @@ function Sidebar({
         }}
       >
         {/* Create course CTA */}
-        <Link
-          to="/app/create"
-          onClick={onClose}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "8px 12px", borderRadius: 10, marginBottom: 8,
-            fontFamily: FONT, fontWeight: 700, fontSize: "12.5px",
-            color: "white", textDecoration: "none",
-            background: active === "create" ? "var(--brand-blue-dark, #1E3A5F)" : "var(--brand-blue)",
-            transition: "opacity 0.15s",
-            flexShrink: 0,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-        >
-          <Plus style={{ width: 15, height: 15 }} />
-          Создать курс
-        </Link>
+        {canCreate && (
+          <Link
+            to="/app/create"
+            onClick={onClose}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "8px 12px", borderRadius: 10, marginBottom: 8,
+              fontFamily: FONT, fontWeight: 700, fontSize: "12.5px",
+              color: "white", textDecoration: "none",
+              background: active === "create" ? "var(--brand-blue-dark, #1E3A5F)" : "var(--brand-blue)",
+              transition: "opacity 0.15s",
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            <Plus style={{ width: 15, height: 15 }} />
+            Создать курс
+          </Link>
+        )}
 
         {/* Primary nav items */}
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -330,20 +338,24 @@ function Sidebar({
             active={active === "courses"}
             onClick={onClose}
           />
-          <NavItem
-            to="/app/progress"
-            icon={TrendingUp}
-            label="Прогресс"
-            active={active === "progress"}
-            onClick={onClose}
-          />
-          <NavItem
-            to={learnHref}
-            icon={GraduationCap}
-            label="Учиться"
-            active={active === "learn"}
-            onClick={onClose}
-          />
+          {showLearningNav && (
+            <>
+              <NavItem
+                to="/app/progress"
+                icon={TrendingUp}
+                label="Прогресс"
+                active={active === "progress"}
+                onClick={onClose}
+              />
+              <NavItem
+                to={learnHref}
+                icon={GraduationCap}
+                label="Учиться"
+                active={active === "learn"}
+                onClick={onClose}
+              />
+            </>
+          )}
         </div>
 
         {/* Recent courses */}
@@ -424,6 +436,10 @@ function Sidebar({
 
 export default function AppLayout() {
   const { user } = useAuth();
+  const { profile } = useProfile();
+  const role = normalizeProfileRole(profile?.app_role);
+  const canCreate = canCreateCourses(role);
+  const showLearningNav = !shouldHideLearningNavigation(role, profile?.hide_learning_navigation);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [oauthBanner, setOauthBanner] = useState<string | null>(null);
   const [recentCourses, setRecentCourses] = useState<{ id: string; title: string }[]>([]);
@@ -441,7 +457,7 @@ export default function AppLayout() {
   }, []);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !canCreate) {
       setRecentCourses([]);
       return;
     }
@@ -452,7 +468,7 @@ export default function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, canCreate]);
 
   const learnHref = recentCourses[0] ? `/learn/${recentCourses[0].id}` : "/app";
 
@@ -485,7 +501,7 @@ export default function AppLayout() {
         }}
         className="hidden md:block"
       >
-        <Sidebar recentCourses={recentCourses} learnHref={learnHref} />
+        <Sidebar recentCourses={recentCourses} learnHref={learnHref} canCreate={canCreate} showLearningNav={showLearningNav} />
       </div>
 
       {/* Mobile sidebar drawer */}
@@ -498,7 +514,7 @@ export default function AppLayout() {
           transition: "transform 0.2s ease",
         }}
       >
-        <Sidebar onClose={() => setMobileOpen(false)} recentCourses={recentCourses} learnHref={learnHref} />
+        <Sidebar onClose={() => setMobileOpen(false)} recentCourses={recentCourses} learnHref={learnHref} canCreate={canCreate} showLearningNav={showLearningNav} />
       </div>
 
       {/* Main content */}

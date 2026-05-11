@@ -9,6 +9,7 @@ import AuthCallback from "./pages/auth/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import AppLayout from "./components/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { CourseManagementRoute } from "@/components/auth/RoleGate";
 
 const CreateCourse    = lazy(() => import("./pages/CreateCourse"));
 const CreateFromSource= lazy(() => import("./pages/CreateFromSource"));
@@ -33,6 +34,10 @@ function ProtectedLazy({ children }: { children: React.ReactNode }) {
   return <ProtectedRoute><Lazy>{children}</Lazy></ProtectedRoute>;
 }
 
+function ManagerLazy({ children }: { children: React.ReactNode }) {
+  return <CourseManagementRoute><Lazy>{children}</Lazy></CourseManagementRoute>;
+}
+
 export const router = createBrowserRouter([
   { path: "/", Component: Landing },
   { path: "/login", element: <Navigate to="/auth/login" replace /> },
@@ -49,14 +54,14 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute><AppLayout /></ProtectedRoute>,
     children: [
       { index: true, Component: Dashboard },
-      { path: "create", element: <Lazy><CreateCourse /></Lazy> },
-      { path: "create-source", element: <Lazy><CreateFromSource /></Lazy> },
+      { path: "create", element: <ManagerLazy><CreateCourse /></ManagerLazy> },
+      { path: "create-source", element: <ManagerLazy><CreateFromSource /></ManagerLazy> },
       { path: "source/create", element: <Navigate to="/app/create-source" replace /> },
-      { path: "plan/:courseId", element: <Lazy><PlanResult /></Lazy> },
-      { path: "editor/:courseId", element: <Lazy><CourseEditor /></Lazy> },
-      { path: "learners/:courseId", element: <Lazy><CourseLearners /></Lazy> },
-      { path: "qa/:courseId", element: <Lazy><QAReport /></Lazy> },
-      { path: "versions/:courseId", element: <Lazy><VersionHistory /></Lazy> },
+      { path: "plan/:courseId", element: <ManagerLazy><PlanResult /></ManagerLazy> },
+      { path: "editor/:courseId", element: <ManagerLazy><CourseEditor /></ManagerLazy> },
+      { path: "learners/:courseId", element: <ManagerLazy><CourseLearners /></ManagerLazy> },
+      { path: "qa/:courseId", element: <ManagerLazy><QAReport /></ManagerLazy> },
+      { path: "versions/:courseId", element: <ManagerLazy><VersionHistory /></ManagerLazy> },
       { path: "progress", element: <Lazy><ProgressDashboard /></Lazy> },
       { path: "profile", element: <Lazy><UserProfile /></Lazy> },
       { path: "settings", element: <Lazy><Settings /></Lazy> },

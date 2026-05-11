@@ -11,6 +11,7 @@ import type { DashboardCourse } from "@/entities/course/readModels";
 import { formatRuDate, formatRuDateTime } from "@/lib/dateFormat";
 import { asRecord, num, str } from "@/services/dbRowUtils";
 import { toUserErrorMessage } from "@/lib/errorMessages";
+import { isStudentRole, type ProfileRoleValue } from "@/lib/profileRole";
 
 export type { DashboardCourse };
 
@@ -128,18 +129,25 @@ export async function fetchCourseContentMetrics(courseId: string): Promise<Cours
   return { moduleCount: mids.length, lessonCount, filledCount: filled };
 }
 
-export async function listMyCourses(authorId: string): Promise<MyCoursesQueryResult> {
-  const { data: ownedRows, error: coursesError } = await supabase
-    .from("courses")
-    .select("id, title, topic, author_id, created_at, updated_at, status, current_version_id, course_type")
-    .eq("author_id", authorId)
-    .order("updated_at", { ascending: false });
-
-  if (coursesError) return { courses: [], error: safeError(coursesError, "Не удалось загрузить курсы") };
-
+export async function listMyCourses(
+  authorId: string,
+  options: { profileRole?: ProfileRoleValue | string | null } = {},
+): Promise<MyCoursesQueryResult> {
+  const studentMode = isStudentRole(options.profileRole);
   const courseById = new Map<string, CourseRowLite>();
-  for (const course of (ownedRows ?? []) as CourseRowLite[]) {
-    if (course.id) courseById.set(course.id, { ...course, accessRole: "owner" });
+
+  if (!studentMode) {
+    const { data: ownedRows, error: coursesError } = await supabase
+      .from("courses")
+      .select("id, title, topic, author_id, created_at, updated_at, status, current_version_id, course_type")
+      .eq("author_id", authorId)
+      .order("updated_at", { ascending: false });
+
+    if (coursesError) return { courses: [], error: safeError(coursesError, "Не удалось загрузить курсы") };
+
+    for (const course of (ownedRows ?? []) as CourseRowLite[]) {
+      if (course.id) courseById.set(course.id, { ...course, accessRole: "owner" });
+    }
   }
 
   const { data: enrollmentRows, error: enrollmentsError } = await supabase
@@ -156,7 +164,9 @@ export async function listMyCourses(authorId: string): Promise<MyCoursesQueryRes
   for (const row of enrollmentRows ?? []) {
     const rec = asRecord(row);
     const courseId = str(rec?.course_id);
-    const role = str(rec?.role) === "owner" ? "owner" : "learner";
+    const rawRole = str(rec?.role) === "owner" ? "owner" : "learner";
+    if (studentMode && rawRole !== "learner") continue;
+    const role = studentMode ? "learner" : rawRole;
     if (courseId) enrollmentRoleByCourse.set(courseId, role);
   }
 

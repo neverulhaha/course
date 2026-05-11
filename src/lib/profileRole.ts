@@ -18,3 +18,28 @@ export function normalizeProfileRole(raw: unknown): ProfileRoleValue {
 export function profileRoleLabel(value: ProfileRoleValue): string {
   return PROFILE_ROLES.find((r) => r.value === value)?.label ?? "Студент";
 }
+
+export function canCreateCourses(role: ProfileRoleValue | string | null | undefined): boolean {
+  if (role === "admin") return true;
+  const normalized = normalizeProfileRole(role);
+  return normalized === "teacher" || normalized === "author";
+}
+
+export function canManageCourseSections(role: ProfileRoleValue | string | null | undefined): boolean {
+  return canCreateCourses(role);
+}
+
+export function isStudentRole(role: ProfileRoleValue | string | null | undefined): boolean {
+  return normalizeProfileRole(role) === "student";
+}
+
+export function isTeacherRole(role: ProfileRoleValue | string | null | undefined): boolean {
+  return normalizeProfileRole(role) === "teacher";
+}
+
+export function shouldHideLearningNavigation(
+  role: ProfileRoleValue | string | null | undefined,
+  hideLearningNavigation: boolean | null | undefined,
+): boolean {
+  return isTeacherRole(role) && Boolean(hideLearningNavigation);
+}

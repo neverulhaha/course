@@ -25,6 +25,8 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/providers/ProfileProvider";
+import { canCreateCourses, normalizeProfileRole } from "@/lib/profileRole";
 import { COURSE_STATUS_UI, type CourseStatus } from "@/entities/course/courseStatus";
 import { listMyCourses, type MyCourseListItem } from "@/services/courseQuery.service";
 import { deleteCourse } from "@/services/courseDelete.service";
@@ -158,26 +160,30 @@ function ErrorState({ message, onRetry, retrying }: { message: string; onRetry: 
   );
 }
 
-function EmptyCoursesState() {
+function EmptyCoursesState({ canCreate }: { canCreate: boolean }) {
   return (
     <div className="flex min-h-[420px] flex-col items-center justify-center rounded-3xl border-2 border-dashed border-[var(--border-md)] bg-[var(--bg-surface)] px-6 py-16 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[rgba(74,144,226,0.08)] text-[var(--brand-blue)]">
         <GraduationCap className="h-8 w-8" />
       </div>
-      <h2 className="mt-6 text-2xl font-extrabold tracking-tight text-[var(--gray-900)]">У вас пока нет курсов</h2>
+      <h2 className="mt-6 text-2xl font-extrabold tracking-tight text-[var(--gray-900)]">{canCreate ? "У вас пока нет курсов" : "Вам пока не назначили курсы"}</h2>
       <p className="mt-3 max-w-md text-sm font-medium leading-relaxed text-[var(--gray-500)]">
-        Создайте первый курс вручную или на основе источника. После генерации он появится в этом списке.
+        {canCreate
+          ? "Создайте первый курс вручную или на основе источника. После генерации он появится в этом списке."
+          : "Когда преподаватель или автор добавит вас в курс, он появится здесь для прохождения."}
       </p>
-      <div className="mt-7 flex w-full max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
-        <Link to="/app/create" className="vs-btn vs-btn-primary vs-btn-md min-h-11 justify-center">
-          <Plus className="h-4 w-4" />
-          Создать курс
-        </Link>
-        <Link to="/app/create-source" className="vs-btn vs-btn-secondary vs-btn-md min-h-11 justify-center">
-          <FileText className="h-4 w-4" />
-          По источникам
-        </Link>
-      </div>
+      {canCreate && (
+        <div className="mt-7 flex w-full max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
+          <Link to="/app/create" className="vs-btn vs-btn-primary vs-btn-md min-h-11 justify-center">
+            <Plus className="h-4 w-4" />
+            Создать курс
+          </Link>
+          <Link to="/app/create-source" className="vs-btn vs-btn-secondary vs-btn-md min-h-11 justify-center">
+            <FileText className="h-4 w-4" />
+            По источникам
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
@@ -405,6 +411,9 @@ function CourseRow({ course, onDelete }: { course: MyCourseListItem; onDelete: (
 
 export default function MyCourses() {
   const { user } = useAuth();
+  const { profile, loading: profileLoading } = useProfile();
+  const profileRole = normalizeProfileRole(profile?.app_role);
+  const canCreate = canCreateCourses(profileRole);
   const [courses, setCourses] = useState<MyCourseListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -416,6 +425,10 @@ export default function MyCourses() {
   const [deleting, setDeleting] = useState(false);
 
   const loadCourses = useCallback(async () => {
+    if (profileLoading) {
+      setLoading(true);
+      return;
+    }
     if (!user?.id) {
       setLoading(false);
       setError("Войдите в систему.");
@@ -423,7 +436,7 @@ export default function MyCourses() {
     }
     setLoading(true);
     setError(null);
-    const result = await listMyCourses(user.id);
+    const result = await listMyCourses(user.id, { profileRole });
     if (result.error) {
       setCourses([]);
       setError(toUserErrorMessage(result.error, "Не удалось загрузить курсы. Попробуйте ещё раз."));
@@ -431,7 +444,7 @@ export default function MyCourses() {
       setCourses(result.courses);
     }
     setLoading(false);
-  }, [user?.id]);
+  }, [user?.id, profileLoading, profileRole]);
 
   useEffect(() => {
     void loadCourses();
@@ -508,19 +521,23 @@ export default function MyCourses() {
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--brand-blue)]">Рабочая область</p>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-[var(--gray-900)]">Мои курсы</h1>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-[var(--gray-500)]">
-              Управляйте своими курсами, проходите личные и назначенные курсы, открывайте редактор и прогресс из одного места.
+              {canCreate
+                ? "Управляйте своими курсами, проходите личные и назначенные курсы, открывайте редактор и прогресс из одного места."
+                : "Проходите курсы, в которые вас добавили преподаватели или авторы."}
             </p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Link to="/app/create-source" className="vs-btn vs-btn-secondary vs-btn-md min-h-11 justify-center">
-              <FileText className="h-4 w-4" />
-              По источникам
-            </Link>
-            <Link to="/app/create" className="vs-btn vs-btn-primary vs-btn-md min-h-11 justify-center">
-              <Plus className="h-4 w-4" />
-              Создать курс
-            </Link>
-          </div>
+          {canCreate && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link to="/app/create-source" className="vs-btn vs-btn-secondary vs-btn-md min-h-11 justify-center">
+                <FileText className="h-4 w-4" />
+                По источникам
+              </Link>
+              <Link to="/app/create" className="vs-btn vs-btn-primary vs-btn-md min-h-11 justify-center">
+                <Plus className="h-4 w-4" />
+                Создать курс
+              </Link>
+            </div>
+          )}
         </div>
       </header>
 
@@ -530,7 +547,7 @@ export default function MyCourses() {
         ) : error ? (
           <ErrorState message={error} onRetry={loadCourses} retrying={loading} />
         ) : courses.length === 0 ? (
-          <EmptyCoursesState />
+          <EmptyCoursesState canCreate={canCreate} />
         ) : (
           <>
             <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -663,12 +680,14 @@ export default function MyCourses() {
               </section>
             )}
 
-            <div className="mt-6 flex items-center justify-center rounded-3xl border-2 border-dashed border-[var(--border-md)] p-5">
-              <Link to="/app/create" className="vs-btn vs-btn-secondary min-h-11 justify-center">
-                <Plus className="h-4 w-4" />
-                Создать ещё один курс
-              </Link>
-            </div>
+            {canCreate && (
+              <div className="mt-6 flex items-center justify-center rounded-3xl border-2 border-dashed border-[var(--border-md)] p-5">
+                <Link to="/app/create" className="vs-btn vs-btn-secondary min-h-11 justify-center">
+                  <Plus className="h-4 w-4" />
+                  Создать ещё один курс
+                </Link>
+              </div>
+            )}
           </>
         )}
       </main>
