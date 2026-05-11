@@ -240,9 +240,6 @@ export default function CourseLearners() {
               Добавить
             </button>
           </div>
-          <p className="mt-3 text-xs font-semibold leading-relaxed text-[var(--gray-500)]">
-            Для MVP обучающийся должен быть уже зарегистрирован в системе. После добавления он увидит курс в своём списке.
-          </p>
         </form>
 
         {loading ? (
